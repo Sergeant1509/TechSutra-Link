@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "307314343238",
+    "project_id": "techsutra-link",
+    "storage_bucket": "techsutra-link.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307314343238:android:6bb633612216372a0bf947",
+        "android_client_info": {
+          "package_name": "com.techsutra.link"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCc_6_jALEJdTOE79rT7eClV4_aql2q7TI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

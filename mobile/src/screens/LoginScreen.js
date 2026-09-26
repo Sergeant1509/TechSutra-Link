@@ -19,7 +19,7 @@ export default function LoginScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = () => {
-    navigation.replace('Main');
+    navigation.replace('Admin');
   };
 
   return (

@@ -1,16 +1,7 @@
 import React from 'react';
-
-import {
-  NavigationContainer,
-} from '@react-navigation/native';
-
-import {
-  createNativeStackNavigator,
-} from '@react-navigation/native-stack';
-
-import {
-  createBottomTabNavigator,
-} from '@react-navigation/bottom-tabs';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
@@ -18,6 +9,10 @@ import MeetingsScreen from '../screens/MeetingsScreen';
 import EventsScreen from '../screens/EventsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
+
+import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
+import CreateMeetingScreen from '../screens/admin/CreateMeetingScreen';
+import LiveAttendanceScreen from '../screens/admin/LiveAttendanceScreen';
 
 import { COLORS } from '../theme/colors';
 
@@ -29,10 +24,8 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-
         tabBarActiveTintColor: COLORS.goldDark,
         tabBarInactiveTintColor: COLORS.textLight,
-
         tabBarStyle: {
           height: 70,
           paddingBottom: 8,
@@ -40,7 +33,6 @@ function MainTabs() {
           backgroundColor: COLORS.white,
           borderTopColor: COLORS.border,
         },
-
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '600',
@@ -106,6 +98,31 @@ function MainStack() {
   );
 }
 
+function AdminStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen
+        name="AdminDashboard"
+        component={AdminDashboardScreen}
+      />
+
+      <Stack.Screen
+        name="CreateMeeting"
+        component={CreateMeetingScreen}
+      />
+
+      <Stack.Screen
+        name="LiveAttendance"
+        component={LiveAttendanceScreen}
+      />
+    </Stack.Navigator>
+  );
+}
+
 export default function AppNavigator() {
   return (
     <NavigationContainer>
@@ -123,6 +140,11 @@ export default function AppNavigator() {
         <Stack.Screen
           name="Main"
           component={MainStack}
+        />
+
+        <Stack.Screen
+          name="Admin"
+          component={AdminStack}
         />
       </Stack.Navigator>
     </NavigationContainer>
