@@ -9,17 +9,141 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 
 import { COLORS } from '../theme/colors';
+import { auth } from '../services/firebase';
+
+import {
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithCredential,
+} from 'firebase/auth';
+
+import {
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+
+GoogleSignin.configure({
+  webClientId:
+    '307314343238-klp92mbh23nm69q3e3he23op7m34abom.apps.googleusercontent.com',
+});
 
 export default function LoginScreen({ navigation }) {
   const [memberId, setMemberId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    navigation.replace('Admin');
+  const handleLogin = async () => {
+    if (!memberId.trim() || !password) {
+      Alert.alert(
+        'Missing Details',
+        'Please enter your email and password.'
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      await signInWithEmailAndPassword(
+        auth,
+        memberId.trim(),
+        password
+      );
+
+      navigation.replace('Main');
+    } catch (error) {
+      console.log('Email login error:', error);
+
+      let message = 'Unable to login. Please try again.';
+
+      switch (error.code) {
+        case 'auth/invalid-credential':
+          message = 'Invalid email or password.';
+          break;
+
+        case 'auth/user-not-found':
+          message = 'No account exists with this email.';
+          break;
+
+        case 'auth/wrong-password':
+          message = 'Incorrect password.';
+          break;
+
+        case 'auth/invalid-email':
+          message = 'Please enter a valid email address.';
+          break;
+
+        case 'auth/too-many-requests':
+          message =
+            'Too many login attempts. Please try again later.';
+          break;
+
+        default:
+          message = error.message || message;
+      }
+
+      Alert.alert('Login Failed', message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (loading) return;
+
+    try {
+      setLoading(true);
+
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+
+      const response = await GoogleSignin.signIn();
+
+      const idToken = response?.data?.idToken;
+
+      if (!idToken) {
+        throw new Error('Google did not return an ID token.');
+      }
+
+      const googleCredential =
+        GoogleAuthProvider.credential(idToken);
+
+      await signInWithCredential(auth, googleCredential);
+
+      navigation.replace('Main');
+    } catch (error) {
+      console.log('Google login error:', error);
+
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        return;
+      }
+
+      if (error.code === statusCodes.IN_PROGRESS) {
+        return;
+      }
+
+      if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert(
+          'Google Play Services',
+          'Google Play Services is unavailable or needs to be updated.'
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Google Login Failed',
+        error.message || 'Unable to sign in with Google.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -37,7 +161,6 @@ export default function LoginScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-
         <View style={styles.header}>
           <Text style={styles.logoText}>
             TechSutra <Text style={styles.logoGold}>Link</Text>
@@ -53,7 +176,6 @@ export default function LoginScreen({ navigation }) {
         </View>
 
         <View style={styles.form}>
-
           <Text style={styles.label}>
             Member ID / Email
           </Text>
@@ -66,6 +188,7 @@ export default function LoginScreen({ navigation }) {
             onChangeText={setMemberId}
             autoCapitalize="none"
             keyboardType="email-address"
+            editable={!loading}
           />
 
           <Text style={[styles.label, styles.passwordLabel]}>
@@ -80,11 +203,13 @@ export default function LoginScreen({ navigation }) {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
+              editable={!loading}
             />
 
             <Pressable
               style={styles.showButton}
               onPress={() => setShowPassword(!showPassword)}
+              disabled={loading}
             >
               <Text style={styles.showText}>
                 {showPassword ? 'Hide' : 'Show'}
@@ -94,7 +219,13 @@ export default function LoginScreen({ navigation }) {
 
           <Pressable
             style={styles.forgotButton}
-            onPress={() => {}}
+            onPress={() => {
+              Alert.alert(
+                'Forgot Password',
+                'Password reset will be available after Firebase account setup.'
+              );
+            }}
+            disabled={loading}
           >
             <Text style={styles.forgotText}>
               Forgot Password?
@@ -102,12 +233,20 @@ export default function LoginScreen({ navigation }) {
           </Pressable>
 
           <Pressable
-            style={styles.loginButton}
+            style={[
+              styles.loginButton,
+              loading && styles.disabledButton,
+            ]}
             onPress={handleLogin}
+            disabled={loading}
           >
-            <Text style={styles.loginText}>
-              Login
-            </Text>
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.loginText}>
+                Login
+              </Text>
+            )}
           </Pressable>
 
           <View style={styles.dividerContainer}>
@@ -121,8 +260,12 @@ export default function LoginScreen({ navigation }) {
           </View>
 
           <Pressable
-            style={styles.googleButton}
-            onPress={() => {}}
+            style={[
+              styles.googleButton,
+              loading && styles.disabledGoogleButton,
+            ]}
+            onPress={handleGoogleLogin}
+            disabled={loading}
           >
             <Text style={styles.googleIcon}>
               G
@@ -132,7 +275,6 @@ export default function LoginScreen({ navigation }) {
               Continue with Google
             </Text>
           </Pressable>
-
         </View>
 
         <View style={styles.signupContainer}>
@@ -140,7 +282,15 @@ export default function LoginScreen({ navigation }) {
             New here?
           </Text>
 
-          <Pressable onPress={() => {}}>
+          <Pressable
+            onPress={() => {
+              Alert.alert(
+                'Create Account',
+                'Account registration will be added next.'
+              );
+            }}
+            disabled={loading}
+          >
             <Text style={styles.signupLink}>
               Create Account
             </Text>
@@ -150,7 +300,6 @@ export default function LoginScreen({ navigation }) {
         <Text style={styles.footer}>
           TechSutra Club • MUIT Lucknow
         </Text>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -272,6 +421,10 @@ const styles = StyleSheet.create({
     marginTop: 26,
   },
 
+  disabledButton: {
+    opacity: 0.7,
+  },
+
   loginText: {
     color: COLORS.white,
     fontSize: 16,
@@ -306,6 +459,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+  },
+
+  disabledGoogleButton: {
+    opacity: 0.7,
   },
 
   googleIcon: {
