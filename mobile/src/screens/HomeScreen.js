@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+
 import {
   View,
   Text,
@@ -8,12 +9,46 @@ import {
   Pressable,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
+
 import { COLORS } from '../theme/colors';
 
+import { auth, db } from '../services/firebase';
+
+import { doc, getDoc } from 'firebase/firestore';
+
 export default function HomeScreen({ navigation }) {
+  const [userName, setUserName] = useState('Member');
+
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const user = auth.currentUser;
+
+        if (!user) {
+          return;
+        }
+
+        const userRef = doc(db, 'users', user.uid);
+        const userSnapshot = await getDoc(userRef);
+
+        if (userSnapshot.exists()) {
+          const userData = userSnapshot.data();
+
+          if (userData.name) {
+            setUserName(userData.name);
+          }
+        }
+      } catch (error) {
+        console.log('Error loading user profile:', error);
+      }
+    };
+
+    loadUserProfile();
+  }, []);
+
   return (
     <View style={styles.container}>
-
       <StatusBar
         barStyle="dark-content"
         backgroundColor={COLORS.background}
@@ -23,38 +58,41 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-
         {/* Header */}
-        <View style={styles.header}>
 
+        <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>
               Hello,
             </Text>
 
-            <Text style={styles.name}>
-              Abhijeet 👋
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.name}>
+                {userName}!
+              </Text>
+
+            </View>
           </View>
 
           <Pressable style={styles.notification}>
-            <Text style={styles.notificationIcon}>
-              🔔
-            </Text>
-          </Pressable>
+            <Ionicons
+              name="notifications-outline"
+              size={22}
+              color={COLORS.navy}
+            />
 
+            <View style={styles.notificationDot} />
+          </Pressable>
         </View>
 
         <Text style={styles.intro}>
           Let's build something amazing!
         </Text>
 
-
         {/* Next Meeting */}
+
         <View style={styles.meetingCard}>
-
           <View style={styles.meetingHeader}>
-
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
 
@@ -66,81 +104,103 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.meetingDate}>
               TODAY
             </Text>
-
           </View>
 
           <Text style={styles.meetingTitle}>
             TechSutra Weekly Meeting
           </Text>
 
-          <Text style={styles.meetingInfo}>
-            🕐 5:00 PM
-          </Text>
+          <View style={styles.meetingInfoRow}>
+            <Ionicons
+              name="time-outline"
+              size={17}
+              color="#CBD5E1"
+            />
 
-          <Text style={styles.meetingInfo}>
-            📍 MUIT Campus
-          </Text>
+            <Text style={styles.meetingInfo}>
+              5:00 PM
+            </Text>
+          </View>
+
+          <View style={styles.meetingInfoRow}>
+            <Ionicons
+              name="location-outline"
+              size={17}
+              color="#CBD5E1"
+            />
+
+            <Text style={styles.meetingInfo}>
+              MUIT Campus
+            </Text>
+          </View>
 
           <Pressable
             style={styles.attendanceButton}
             onPress={() => navigation.navigate('Attendance')}
           >
+
             <Text style={styles.attendanceText}>
               Mark Attendance
             </Text>
 
-            <Text style={styles.arrow}>
-              →
-            </Text>
+            <Ionicons
+              name="arrow-forward"
+              size={19}
+              color={COLORS.navy}
+              style={styles.attendanceArrow}
+            />
           </Pressable>
-
         </View>
 
-
         {/* Quick Access */}
+
         <Text style={styles.sectionTitle}>
           Quick Access
         </Text>
 
         <View style={styles.grid}>
-
           <QuickCard
-            icon="📅"
+            icon="calendar-outline"
             title="Meetings"
             subtitle="View meetings"
             onPress={() => navigation.navigate('Meetings')}
           />
 
           <QuickCard
-            icon="🎯"
+            icon="sparkles-outline"
             title="Events"
             subtitle="Upcoming events"
             onPress={() => navigation.navigate('Events')}
           />
 
           <QuickCard
-            icon="👥"
+            icon="people-outline"
             title="Members"
             subtitle="Club members"
           />
 
           <QuickCard
-            icon="📁"
+            icon="folder-outline"
             title="Resources"
             subtitle="Club resources"
           />
-
         </View>
 
-
         {/* Your Activity */}
+
         <Text style={styles.sectionTitle}>
           Your Activity
         </Text>
 
         <View style={styles.activityCard}>
-
           <View style={styles.stat}>
+            <View style={styles.statIconContainer}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={18}
+                color={COLORS.goldDark}
+              />
+            </View>
 
             <Text style={styles.statNumber}>
               78%
@@ -149,14 +209,18 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.statLabel}>
               Attendance
             </Text>
-
           </View>
-
 
           <View style={styles.statDivider} />
 
-
           <View style={styles.stat}>
+            <View style={styles.statIconContainer}>
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={COLORS.goldDark}
+              />
+            </View>
 
             <Text style={styles.statNumber}>
               12
@@ -165,14 +229,18 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.statLabel}>
               Events
             </Text>
-
           </View>
-
 
           <View style={styles.statDivider} />
 
-
           <View style={styles.stat}>
+            <View style={styles.statIconContainer}>
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={COLORS.goldDark}
+              />
+            </View>
 
             <Text style={styles.statNumber}>
               Member
@@ -181,23 +249,21 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.statLabel}>
               Role
             </Text>
-
           </View>
-
         </View>
 
-
         {/* Club Information */}
-        <View style={styles.clubCard}>
 
+        <View style={styles.clubCard}>
           <View style={styles.clubIcon}>
-            <Text style={styles.clubIconText}>
-              💡
-            </Text>
+            <Ionicons
+              name="bulb-outline"
+              size={25}
+              color={COLORS.goldDark}
+            />
           </View>
 
           <View style={styles.clubInfo}>
-
             <Text style={styles.clubTitle}>
               TechSutra Club
             </Text>
@@ -205,17 +271,18 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.clubSubtitle}>
               Organizing technical events & inspiring students
             </Text>
-
           </View>
 
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={COLORS.textLight}
+          />
         </View>
-
       </ScrollView>
-
     </View>
   );
 }
-
 
 /* Quick Access Card */
 
@@ -230,13 +297,12 @@ function QuickCard({
       style={styles.quickCard}
       onPress={onPress}
     >
-
       <View style={styles.quickIconContainer}>
-
-        <Text style={styles.quickIcon}>
-          {icon}
-        </Text>
-
+        <Ionicons
+          name={icon}
+          size={23}
+          color={COLORS.navy}
+        />
       </View>
 
       <Text style={styles.quickTitle}>
@@ -246,26 +312,21 @@ function QuickCard({
       <Text style={styles.quickSubtitle}>
         {subtitle}
       </Text>
-
     </Pressable>
   );
 }
 
-
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
-
 
   content: {
     paddingHorizontal: 20,
     paddingTop: 55,
     paddingBottom: 40,
   },
-
 
   /* Header */
 
@@ -280,11 +341,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
   name: {
     color: COLORS.text,
     fontSize: 25,
     fontWeight: '800',
     marginTop: 2,
+  },
+
+  greetingIcon: {
+    marginLeft: 7,
+    marginTop: 4,
   },
 
   notification: {
@@ -296,17 +367,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
 
     elevation: 2,
+
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 5,
+
     shadowOffset: {
       width: 0,
       height: 2,
     },
   },
 
-  notificationIcon: {
-    fontSize: 19,
+  notificationDot: {
+    position: 'absolute',
+    top: 10,
+    right: 11,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: COLORS.goldDark,
+    borderWidth: 1.5,
+    borderColor: COLORS.white,
   },
 
   intro: {
@@ -315,7 +396,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
     marginBottom: 25,
   },
-
 
   /* Meeting Card */
 
@@ -366,12 +446,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     marginTop: 18,
+    marginBottom: 2,
+  },
+
+  meetingInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
   },
 
   meetingInfo: {
     color: '#CBD5E1',
     fontSize: 13,
-    marginTop: 8,
+    marginLeft: 8,
   },
 
   attendanceButton: {
@@ -388,15 +475,12 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
     fontSize: 14,
     fontWeight: '800',
+    marginLeft: 7,
   },
 
-  arrow: {
-    color: COLORS.navy,
-    fontSize: 20,
-    fontWeight: '800',
+  attendanceArrow: {
     marginLeft: 10,
   },
-
 
   /* Sections */
 
@@ -407,7 +491,6 @@ const styles = StyleSheet.create({
     marginTop: 28,
     marginBottom: 13,
   },
-
 
   /* Quick Access */
 
@@ -425,9 +508,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
 
     elevation: 1,
+
     shadowColor: '#000',
     shadowOpacity: 0.03,
     shadowRadius: 4,
+
     shadowOffset: {
       width: 0,
       height: 2,
@@ -444,10 +529,6 @@ const styles = StyleSheet.create({
     marginBottom: 11,
   },
 
-  quickIcon: {
-    fontSize: 22,
-  },
-
   quickTitle: {
     color: COLORS.text,
     fontSize: 15,
@@ -459,7 +540,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
-
 
   /* Activity */
 
@@ -473,9 +553,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
 
     elevation: 1,
+
     shadowColor: '#000',
     shadowOpacity: 0.03,
     shadowRadius: 4,
+
     shadowOffset: {
       width: 0,
       height: 2,
@@ -485,6 +567,16 @@ const styles = StyleSheet.create({
   stat: {
     alignItems: 'center',
     flex: 1,
+  },
+
+  statIconContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FFF7D6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 5,
   },
 
   statNumber: {
@@ -501,10 +593,9 @@ const styles = StyleSheet.create({
 
   statDivider: {
     width: 1,
-    height: 35,
+    height: 50,
     backgroundColor: COLORS.border,
   },
-
 
   /* Club Information */
 
@@ -526,13 +617,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  clubIconText: {
-    fontSize: 23,
-  },
-
   clubInfo: {
     flex: 1,
     marginLeft: 13,
+    marginRight: 8,
   },
 
   clubTitle: {
@@ -547,5 +635,4 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 3,
   },
-
 });

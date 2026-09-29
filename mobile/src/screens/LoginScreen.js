@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+
 import {
   View,
   Text,
@@ -14,13 +15,18 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../theme/colors';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithCredential,
 } from 'firebase/auth';
+
+import {
+  doc,
+  getDoc,
+} from 'firebase/firestore';
 
 import {
   GoogleSignin,
@@ -38,6 +44,52 @@ export default function LoginScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const routeUserByRole = async (user) => {
+    if (!user) {
+      throw new Error('Authentication user was not found.');
+    }
+
+    const userRef = doc(db, 'users', user.uid);
+    const userSnapshot = await getDoc(userRef);
+
+    /*
+     * IMPORTANT:
+     * The Firebase Authentication account can exist
+     * even when the TechSutra Firestore profile does not.
+     *
+     * In that case, send the user to Signup so they
+     * can complete their TechSutra profile.
+     */
+    if (!userSnapshot.exists()) {
+      navigation.replace('Signup', {
+        googleUser: {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || '',
+          photoURL: user.photoURL || '',
+        },
+      });
+
+      return;
+    }
+
+    const userData = userSnapshot.data();
+
+    if (userData.role === 'president') {
+      navigation.replace('Admin');
+      return;
+    }
+
+    if (userData.role === 'member') {
+      navigation.replace('Main');
+      return;
+    }
+
+    throw new Error(
+      'Your TechSutra profile has an invalid role. Please contact the administrator.'
+    );
+  };
+
   const handleLogin = async () => {
     if (!memberId.trim() || !password) {
       Alert.alert(
@@ -50,13 +102,14 @@ export default function LoginScreen({ navigation }) {
     try {
       setLoading(true);
 
-      await signInWithEmailAndPassword(
-        auth,
-        memberId.trim(),
-        password
-      );
+      const userCredential =
+        await signInWithEmailAndPassword(
+          auth,
+          memberId.trim(),
+          password
+        );
 
-      navigation.replace('Main');
+      await routeUserByRole(userCredential.user);
     } catch (error) {
       console.log('Email login error:', error);
 
@@ -109,27 +162,52 @@ export default function LoginScreen({ navigation }) {
       const idToken = response?.data?.idToken;
 
       if (!idToken) {
-        throw new Error('Google did not return an ID token.');
+        throw new Error(
+          'Google did not return an ID token.'
+        );
       }
 
       const googleCredential =
         GoogleAuthProvider.credential(idToken);
 
-      await signInWithCredential(auth, googleCredential);
+      const userCredential =
+        await signInWithCredential(
+          auth,
+          googleCredential
+        );
 
-      navigation.replace('Main');
+      /*
+       * This now handles BOTH:
+       *
+       * 1. Existing Google user + existing profile
+       *    → Main/Admin
+       *
+       * 2. Existing Google Auth account but deleted/
+       *    missing Firestore profile
+       *    → Signup / Complete Profile
+       */
+      await routeUserByRole(userCredential.user);
     } catch (error) {
       console.log('Google login error:', error);
 
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      if (
+        error.code ===
+        statusCodes.SIGN_IN_CANCELLED
+      ) {
         return;
       }
 
-      if (error.code === statusCodes.IN_PROGRESS) {
+      if (
+        error.code ===
+        statusCodes.IN_PROGRESS
+      ) {
         return;
       }
 
-      if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      if (
+        error.code ===
+        statusCodes.PLAY_SERVICES_NOT_AVAILABLE
+      ) {
         Alert.alert(
           'Google Play Services',
           'Google Play Services is unavailable or needs to be updated.'
@@ -139,7 +217,8 @@ export default function LoginScreen({ navigation }) {
 
       Alert.alert(
         'Google Login Failed',
-        error.message || 'Unable to sign in with Google.'
+        error.message ||
+          'Unable to sign in with Google.'
       );
     } finally {
       setLoading(false);
@@ -149,7 +228,11 @@ export default function LoginScreen({ navigation }) {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={
+        Platform.OS === 'ios'
+          ? 'padding'
+          : undefined
+      }
     >
       <StatusBar
         barStyle="dark-content"
@@ -163,7 +246,10 @@ export default function LoginScreen({ navigation }) {
       >
         <View style={styles.header}>
           <Text style={styles.logoText}>
-            TechSutra <Text style={styles.logoGold}>Link</Text>
+            TechSutra{' '}
+            <Text style={styles.logoGold}>
+              Link
+            </Text>
           </Text>
 
           <Text style={styles.welcome}>
@@ -191,7 +277,12 @@ export default function LoginScreen({ navigation }) {
             editable={!loading}
           />
 
-          <Text style={[styles.label, styles.passwordLabel]}>
+          <Text
+            style={[
+              styles.label,
+              styles.passwordLabel,
+            ]}
+          >
             Password
           </Text>
 
@@ -208,7 +299,9 @@ export default function LoginScreen({ navigation }) {
 
             <Pressable
               style={styles.showButton}
-              onPress={() => setShowPassword(!showPassword)}
+              onPress={() =>
+                setShowPassword(!showPassword)
+              }
               disabled={loading}
             >
               <Text style={styles.showText}>
@@ -241,7 +334,9 @@ export default function LoginScreen({ navigation }) {
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color={COLORS.white} />
+              <ActivityIndicator
+                color={COLORS.white}
+              />
             ) : (
               <Text style={styles.loginText}>
                 Login
@@ -262,7 +357,8 @@ export default function LoginScreen({ navigation }) {
           <Pressable
             style={[
               styles.googleButton,
-              loading && styles.disabledGoogleButton,
+              loading &&
+                styles.disabledGoogleButton,
             ]}
             onPress={handleGoogleLogin}
             disabled={loading}
@@ -283,12 +379,9 @@ export default function LoginScreen({ navigation }) {
           </Text>
 
           <Pressable
-            onPress={() => {
-              Alert.alert(
-                'Create Account',
-                'Account registration will be added next.'
-              );
-            }}
+            onPress={() =>
+              navigation.navigate('Signup')
+            }
             disabled={loading}
           >
             <Text style={styles.signupLink}>

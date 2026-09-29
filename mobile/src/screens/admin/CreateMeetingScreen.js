@@ -1,4 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, {
+  useMemo,
+  useState,
+} from 'react';
+
 import {
   Alert,
   Platform,
@@ -9,31 +13,51 @@ import {
   TextInput,
   View,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { COLORS } from '../../theme/colors';
-import { createMeeting } from '../../services/meetingStore';
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
+import { auth } from '../../services/firebase';
 
-const pad = (number) => String(number).padStart(2, '0');
+import {
+  createMeeting,
+  updateMeeting,
+} from '../../services/meetingService';
+
+const DURATION_OPTIONS = [
+  15,
+  30,
+  45,
+  60,
+  90,
+  120,
+];
+
+const pad = (number) =>
+  String(number).padStart(2, '0');
 
 const formatDate = (date) => {
-  return date.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return date.toLocaleDateString(
+    'en-IN',
+    {
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }
+  );
 };
 
 const formatTime12Hour = (date) => {
   let hours = date.getHours();
+
   const minutes = date.getMinutes();
 
-  const period = hours >= 12 ? 'PM' : 'AM';
+  const period =
+    hours >= 12 ? 'PM' : 'AM';
 
   hours = hours % 12;
 
@@ -44,70 +68,331 @@ const formatTime12Hour = (date) => {
   return `${hours}:${pad(minutes)} ${period}`;
 };
 
-const isSameDay = (date1, date2) => {
+const isSameDay = (
+  date1,
+  date2
+) => {
   return (
-    date1.getFullYear() === date2.getFullYear() &&
-    date1.getMonth() === date2.getMonth() &&
-    date1.getDate() === date2.getDate()
+    date1.getFullYear() ===
+      date2.getFullYear() &&
+    date1.getMonth() ===
+      date2.getMonth() &&
+    date1.getDate() ===
+      date2.getDate()
   );
 };
 
-export default function CreateMeetingScreen({ navigation }) {
-  const [meetingMode, setMeetingMode] = useState('schedule');
+/* =========================================
+   CONVERT FIREBASE / ISO DATE TO JS DATE
+========================================= */
 
-  const [title, setTitle] = useState('');
-  const [location, setLocation] = useState('');
+const parseMeetingDate = (
+  meeting
+) => {
+  if (!meeting) {
+    return new Date();
+  }
 
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const date = new Date();
-    date.setHours(12, 0, 0, 0);
-    return date;
-  });
+  if (meeting.startAt) {
+    const parsed =
+      new Date(meeting.startAt);
 
-  const [selectedTime, setSelectedTime] = useState(() => {
-    const date = new Date();
+    if (
+      !Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return parsed;
+    }
+  }
 
-    date.setMinutes(0, 0, 0);
-    date.setHours(date.getHours() + 1);
+  if (meeting.date) {
+    const parsed =
+      new Date(meeting.date);
 
-    return date;
-  });
+    if (
+      !Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return parsed;
+    }
+  }
 
-  const [duration, setDuration] = useState(30);
+  return new Date();
+};
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+/* =========================================
+   PARSE TIME FROM MEETING
+========================================= */
+
+const parseMeetingTime = (
+  meeting
+) => {
+  if (meeting?.startAt) {
+    const parsed =
+      new Date(meeting.startAt);
+
+    if (
+      !Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return parsed;
+    }
+  }
+
+  if (meeting?.startTime) {
+    const timeMatch =
+      meeting.startTime.match(
+        /(\d{1,2}):(\d{2})\s*(AM|PM)/i
+      );
+
+    if (timeMatch) {
+      let hours =
+        parseInt(
+          timeMatch[1],
+          10
+        );
+
+      const minutes =
+        parseInt(
+          timeMatch[2],
+          10
+        );
+
+      const period =
+        timeMatch[3].toUpperCase();
+
+      if (
+        period === 'PM' &&
+        hours !== 12
+      ) {
+        hours += 12;
+      }
+
+      if (
+        period === 'AM' &&
+        hours === 12
+      ) {
+        hours = 0;
+      }
+
+      const date = new Date();
+
+      date.setHours(
+        hours,
+        minutes,
+        0,
+        0
+      );
+
+      return date;
+    }
+  }
+
+  return new Date();
+};
+
+export default function CreateMeetingScreen({
+  navigation,
+  route,
+}) {
+
+  /* =========================================
+     EDIT MODE
+  ========================================= */
+
+  const editMode =
+    route?.params?.editMode === true;
+
+  const editingMeeting =
+    route?.params?.meeting || null;
+
+  /* =========================================
+     INITIAL DATE / TIME
+  ========================================= */
+
+  const initialMeetingDate =
+    useMemo(() => {
+      if (
+        editMode &&
+        editingMeeting
+      ) {
+        return parseMeetingDate(
+          editingMeeting
+        );
+      }
+
+      const date = new Date();
+
+      date.setHours(
+        12,
+        0,
+        0,
+        0
+      );
+
+      return date;
+    }, [
+      editMode,
+      editingMeeting,
+    ]);
+
+  const initialMeetingTime =
+    useMemo(() => {
+      if (
+        editMode &&
+        editingMeeting
+      ) {
+        return parseMeetingTime(
+          editingMeeting
+        );
+      }
+
+      const date = new Date();
+
+      date.setMinutes(
+        0,
+        0,
+        0
+      );
+
+      date.setHours(
+        date.getHours() + 1
+      );
+
+      return date;
+    }, [
+      editMode,
+      editingMeeting,
+    ]);
+
+  /* =========================================
+     STATE
+  ========================================= */
+
+  const [meetingMode, setMeetingMode] =
+    useState(
+      editMode
+        ? 'schedule'
+        : 'schedule'
+    );
+
+  const [title, setTitle] =
+    useState(
+      editMode
+        ? editingMeeting?.title ||
+            ''
+        : ''
+    );
+
+  const [location, setLocation] =
+    useState(
+      editMode
+        ? editingMeeting?.location ||
+            ''
+        : ''
+    );
+
+  const [selectedDate, setSelectedDate] =
+    useState(
+      initialMeetingDate
+    );
+
+  const [selectedTime, setSelectedTime] =
+    useState(
+      initialMeetingTime
+    );
+
+  const [duration, setDuration] =
+    useState(
+      editMode
+        ? Number(
+            editingMeeting?.duration
+          ) || 30
+        : 30
+    );
+
+  const [showDatePicker, setShowDatePicker] =
+    useState(false);
+
+  const [showTimePicker, setShowTimePicker] =
+    useState(false);
+
+  const [creating, setCreating] =
+    useState(false);
+
+  /* =========================================
+     TODAY
+  ========================================= */
 
   const today = useMemo(() => {
     const date = new Date();
 
-    date.setHours(0, 0, 0, 0);
+    date.setHours(
+      0,
+      0,
+      0,
+      0
+    );
 
     return date;
   }, []);
 
-  const handleDateChange = (event, date) => {
+  /* =========================================
+     DATE PICKER
+  ========================================= */
+
+  const handleDateChange = (
+    event,
+    date
+  ) => {
     setShowDatePicker(false);
 
-    if (!date || event?.type === 'dismissed') {
+    if (
+      !date ||
+      event?.type === 'dismissed'
+    ) {
       return;
     }
 
-    const newDate = new Date(date);
+    const newDate =
+      new Date(date);
 
-    newDate.setHours(12, 0, 0, 0);
+    newDate.setHours(
+      12,
+      0,
+      0,
+      0
+    );
 
-    setSelectedDate(newDate);
+    setSelectedDate(
+      newDate
+    );
   };
 
-  const handleTimeChange = (event, date) => {
+  /* =========================================
+     TIME PICKER
+  ========================================= */
+
+  const handleTimeChange = (
+    event,
+    date
+  ) => {
     setShowTimePicker(false);
 
-    if (!date || event?.type === 'dismissed') {
+    if (
+      !date ||
+      event?.type === 'dismissed'
+    ) {
       return;
     }
 
-    const newTime = new Date(selectedTime);
+    const newTime =
+      new Date(
+        selectedTime
+      );
 
     newTime.setHours(
       date.getHours(),
@@ -116,23 +401,38 @@ export default function CreateMeetingScreen({ navigation }) {
       0
     );
 
-    setSelectedTime(newTime);
-  };
-
-  const getScheduledDateTime = () => {
-    const meetingDateTime = new Date(selectedDate);
-
-    meetingDateTime.setHours(
-      selectedTime.getHours(),
-      selectedTime.getMinutes(),
-      0,
-      0
+    setSelectedTime(
+      newTime
     );
-
-    return meetingDateTime;
   };
+
+  /* =========================================
+     COMBINE DATE + TIME
+  ========================================= */
+
+  const getScheduledDateTime =
+    () => {
+      const meetingDateTime =
+        new Date(
+          selectedDate
+        );
+
+      meetingDateTime.setHours(
+        selectedTime.getHours(),
+        selectedTime.getMinutes(),
+        0,
+        0
+      );
+
+      return meetingDateTime;
+    };
+
+  /* =========================================
+     VALIDATION
+  ========================================= */
 
   const validateForm = () => {
+
     if (!title.trim()) {
       Alert.alert(
         'Meeting Title Required',
@@ -151,11 +451,26 @@ export default function CreateMeetingScreen({ navigation }) {
       return false;
     }
 
-    if (meetingMode === 'schedule') {
+    /*
+      Future-time validation is required
+      when creating a scheduled meeting.
+
+      During edit mode we also validate the
+      resulting meeting time so the President
+      cannot accidentally save a past meeting.
+    */
+
+    if (
+      meetingMode ===
+      'schedule'
+    ) {
       const scheduledDateTime =
         getScheduledDateTime();
 
-      if (scheduledDateTime <= new Date()) {
+      if (
+        scheduledDateTime <=
+        new Date()
+      ) {
         Alert.alert(
           'Invalid Meeting Time',
           'Please select a future date and time.'
@@ -168,141 +483,394 @@ export default function CreateMeetingScreen({ navigation }) {
     return true;
   };
 
-  const handleCreateMeeting = () => {
-    if (!validateForm()) {
-      return;
-    }
+  /* =========================================
+     MAIN SUBMIT
+  ========================================= */
 
-    /*
-     * START NOW
-     */
-    if (meetingMode === 'active') {
-      const now = new Date();
+  const handleCreateMeeting =
+    async () => {
 
-      const meeting = createMeeting({
-        title: title.trim(),
-        date: formatDate(now),
-        time: formatTime12Hour(now),
-        location: location.trim(),
-        duration,
-        mode: 'active',
-        startAt: now.toISOString(),
-      });
+      if (creating) {
+        return;
+      }
 
-      navigation.replace('LiveAttendance', {
-        meetingId: meeting.id,
-      });
+      if (!validateForm()) {
+        return;
+      }
 
-      return;
-    }
+      const user =
+        auth.currentUser;
 
-    /*
-     * SCHEDULE MEETING
-     */
-    const scheduledDateTime =
-      getScheduledDateTime();
+      if (!user) {
+        Alert.alert(
+          'Authentication Error',
+          'You are not logged in. Please login again.'
+        );
 
-    const meeting = createMeeting({
-      title: title.trim(),
-      date: formatDate(scheduledDateTime),
-      time: formatTime12Hour(scheduledDateTime),
-      location: location.trim(),
-      duration,
-      mode: 'scheduled',
-      startAt: scheduledDateTime.toISOString(),
-    });
+        return;
+      }
 
-    Alert.alert(
-      'Meeting Scheduled',
-      `${meeting.title}\n\n${formatDate(
-        scheduledDateTime
-      )} at ${formatTime12Hour(
-        scheduledDateTime
-      )}`,
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]
-    );
-  };
+      /*
+       * EDIT MODE
+       */
+
+      if (editMode) {
+
+        if (!editingMeeting?.id) {
+          Alert.alert(
+            'Meeting Error',
+            'The selected meeting could not be identified.'
+          );
+
+          return;
+        }
+
+        try {
+          setCreating(true);
+
+          const scheduledDateTime =
+            getScheduledDateTime();
+
+          await updateMeeting(
+            editingMeeting.id,
+            {
+              title: title.trim(),
+              location: location.trim(),
+              date: formatDate(
+                scheduledDateTime
+              ),
+              startTime:
+                formatTime12Hour(
+                  scheduledDateTime
+                ),
+              startAt:
+                scheduledDateTime.toISOString(),
+              duration:
+                Number(duration) || 30,
+            }
+          );
+
+          Alert.alert(
+            'Meeting Updated',
+            `${title.trim()}\n\n${formatDate(
+              scheduledDateTime
+            )} at ${formatTime12Hour(
+              scheduledDateTime
+            )}`,
+            [
+              {
+                text: 'OK',
+                onPress: () =>
+                  navigation.goBack(),
+              },
+            ]
+          );
+
+        } catch (error) {
+
+          console.log(
+            'Update meeting error:',
+            error
+          );
+
+          Alert.alert(
+            'Unable to Update Meeting',
+            error?.message ||
+              'Something went wrong while updating the meeting.'
+          );
+
+        } finally {
+          setCreating(false);
+        }
+
+        return;
+      }
+
+      /*
+       * NORMAL CREATE FLOW
+       */
+
+      try {
+
+        setCreating(true);
+
+        /* =====================================
+           START NOW
+        ===================================== */
+
+        if (
+          meetingMode ===
+          'active'
+        ) {
+
+          const now =
+            new Date();
+
+          const meeting =
+            await createMeeting({
+              title:
+                title.trim(),
+
+              location:
+                location.trim(),
+
+              date:
+                formatDate(now),
+
+              startTime:
+                formatTime12Hour(now),
+
+              startAt:
+                now.toISOString(),
+
+              duration,
+
+              createdBy:
+                user.uid,
+
+              status:
+                'active',
+            });
+
+          Alert.alert(
+            'Meeting Started',
+            `${meeting.title}\n\n${formatDate(
+              now
+            )} at ${formatTime12Hour(
+              now
+            )}`,
+            [
+              {
+                text: 'Continue',
+
+                onPress: () =>
+                  navigation.replace(
+                    'LiveAttendance',
+                    {
+                      meetingId:
+                        meeting.id,
+                    }
+                  ),
+              },
+            ]
+          );
+
+          return;
+        }
+
+        /* =====================================
+           SCHEDULE MEETING
+        ===================================== */
+
+        const scheduledDateTime =
+          getScheduledDateTime();
+
+        const meeting =
+          await createMeeting({
+            title:
+              title.trim(),
+
+            location:
+              location.trim(),
+
+            date:
+              formatDate(
+                scheduledDateTime
+              ),
+
+            startTime:
+              formatTime12Hour(
+                scheduledDateTime
+              ),
+
+            startAt:
+              scheduledDateTime.toISOString(),
+
+            duration,
+
+            createdBy:
+              user.uid,
+
+            status:
+              'scheduled',
+          });
+
+        Alert.alert(
+          'Meeting Scheduled',
+          `${meeting.title}\n\n${formatDate(
+            scheduledDateTime
+          )} at ${formatTime12Hour(
+            scheduledDateTime
+          )}`,
+          [
+            {
+              text: 'OK',
+              onPress: () =>
+                navigation.goBack(),
+            },
+          ]
+        );
+
+      } catch (error) {
+
+        console.log(
+          'Create meeting error:',
+          error
+        );
+
+        Alert.alert(
+          'Unable to Create Meeting',
+          error?.message ||
+            'Something went wrong while creating the meeting.'
+        );
+
+      } finally {
+        setCreating(false);
+      }
+    };
+
+  /* =========================================
+     RETURN UI
+  ========================================= */
 
   return (
     <SafeAreaView
       style={styles.safeArea}
-      edges={['top', 'left', 'right']}
+      edges={[
+        'top',
+        'left',
+        'right',
+      ]}
     >
+
       <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={
+          styles.container
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
       >
+
         {/* HEADER */}
 
         <View style={styles.header}>
+
           <Pressable
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            style={
+              styles.backButton
+            }
+            onPress={() =>
+              navigation.goBack()
+            }
           >
+
             <Ionicons
               name="arrow-back"
               size={22}
               color={COLORS.navy}
             />
+
           </Pressable>
 
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>
-              Create Meeting
+          <View
+            style={
+              styles.headerTextContainer
+            }
+          >
+
+            <Text
+              style={
+                styles.headerTitle
+              }
+            >
+              {editMode
+                ? 'Edit Meeting'
+                : 'Create Meeting'}
             </Text>
 
-            <Text style={styles.headerSubtitle}>
-              Organize your TechSutra meeting
+            <Text
+              style={
+                styles.headerSubtitle
+              }
+            >
+              {editMode
+                ? 'Update your TechSutra meeting'
+                : 'Organize your TechSutra meeting'}
             </Text>
+
           </View>
+
         </View>
 
         {/* MEETING TYPE */}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
+
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
             Meeting Type
           </Text>
 
-          <View style={styles.modeContainer}>
+          <View
+            style={
+              styles.modeContainer
+            }
+          >
+
+            {/* SCHEDULE */}
+
             <Pressable
               style={[
                 styles.modeCard,
-                meetingMode === 'schedule' &&
+                meetingMode ===
+                  'schedule' &&
                   styles.modeCardActive,
               ]}
               onPress={() =>
-                setMeetingMode('schedule')
+                !editMode &&
+                setMeetingMode(
+                  'schedule'
+                )
               }
             >
+
               <View
                 style={[
                   styles.modeIcon,
-                  meetingMode === 'schedule' &&
+                  meetingMode ===
+                    'schedule' &&
                     styles.modeIconActive,
                 ]}
               >
+
                 <Ionicons
                   name="calendar-outline"
                   size={22}
                   color={
-                    meetingMode === 'schedule'
+                    meetingMode ===
+                    'schedule'
                       ? COLORS.white
                       : COLORS.navy
                   }
                 />
+
               </View>
 
-              <View style={styles.modeTextContainer}>
+              <View
+                style={
+                  styles.modeTextContainer
+                }
+              >
+
                 <Text
                   style={[
                     styles.modeTitle,
-                    meetingMode === 'schedule' &&
+                    meetingMode ===
+                      'schedule' &&
                       styles.modeTitleActive,
                   ]}
                 >
@@ -312,383 +880,699 @@ export default function CreateMeetingScreen({ navigation }) {
                 <Text
                   style={[
                     styles.modeDescription,
-                    meetingMode === 'schedule' &&
+                    meetingMode ===
+                      'schedule' &&
                       styles.modeDescriptionActive,
                   ]}
                 >
                   Plan a meeting for later
                 </Text>
+
               </View>
 
-              {meetingMode === 'schedule' && (
+              {meetingMode ===
+                'schedule' && (
                 <Ionicons
                   name="checkmark-circle"
-                  size={22}
-                  color={COLORS.gold}
-                />
-              )}
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.modeCard,
-                meetingMode === 'active' &&
-                  styles.modeCardActive,
-              ]}
-              onPress={() =>
-                setMeetingMode('active')
-              }
-            >
-              <View
-                style={[
-                  styles.modeIcon,
-                  meetingMode === 'active' &&
-                    styles.modeIconActive,
-                ]}
-              >
-                <Ionicons
-                  name="play-outline"
                   size={22}
                   color={
-                    meetingMode === 'active'
-                      ? COLORS.white
-                      : COLORS.navy
+                    COLORS.gold
                   }
                 />
-              </View>
-
-              <View style={styles.modeTextContainer}>
-                <Text
-                  style={[
-                    styles.modeTitle,
-                    meetingMode === 'active' &&
-                      styles.modeTitleActive,
-                  ]}
-                >
-                  Start Now
-                </Text>
-
-                <Text
-                  style={[
-                    styles.modeDescription,
-                    meetingMode === 'active' &&
-                      styles.modeDescriptionActive,
-                  ]}
-                >
-                  Start attendance immediately
-                </Text>
-              </View>
-
-              {meetingMode === 'active' && (
-                <Ionicons
-                  name="checkmark-circle"
-                  size={22}
-                  color={COLORS.gold}
-                />
               )}
+
             </Pressable>
+
+            {/* START NOW */}
+
+            {!editMode && (
+              <Pressable
+                style={[
+                  styles.modeCard,
+                  meetingMode ===
+                    'active' &&
+                    styles.modeCardActive,
+                ]}
+                onPress={() =>
+                  setMeetingMode(
+                    'active'
+                  )
+                }
+              >
+
+                <View
+                  style={[
+                    styles.modeIcon,
+                    meetingMode ===
+                      'active' &&
+                      styles.modeIconActive,
+                  ]}
+                >
+
+                  <Ionicons
+                    name="play-outline"
+                    size={22}
+                    color={
+                      meetingMode ===
+                      'active'
+                        ? COLORS.white
+                        : COLORS.navy
+                    }
+                  />
+
+                </View>
+
+                <View
+                  style={
+                    styles.modeTextContainer
+                  }
+                >
+
+                  <Text
+                    style={[
+                      styles.modeTitle,
+                      meetingMode ===
+                        'active' &&
+                        styles.modeTitleActive,
+                    ]}
+                  >
+                    Start Now
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.modeDescription,
+                      meetingMode ===
+                        'active' &&
+                        styles.modeDescriptionActive,
+                    ]}
+                  >
+                    Start attendance immediately
+                  </Text>
+
+                </View>
+
+                {meetingMode ===
+                  'active' && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={22}
+                    color={
+                      COLORS.gold
+                    }
+                  />
+                )}
+
+              </Pressable>
+            )}
+
           </View>
+
         </View>
 
         {/* MEETING DETAILS */}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
+
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
             Meeting Details
           </Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>
+          {/* TITLE */}
+
+          <View
+            style={
+              styles.inputGroup
+            }
+          >
+
+            <Text
+              style={
+                styles.inputLabel
+              }
+            >
               Meeting Title
             </Text>
 
-            <View style={styles.inputContainer}>
+            <View
+              style={
+                styles.inputContainer
+              }
+            >
+
               <Ionicons
                 name="create-outline"
                 size={20}
-                color={COLORS.textSecondary}
+                color={
+                  COLORS.textSecondary
+                }
               />
 
               <TextInput
                 value={title}
-                onChangeText={setTitle}
+                onChangeText={
+                  setTitle
+                }
                 placeholder="e.g. TechSutra Weekly Meeting"
                 placeholderTextColor={
                   COLORS.textLight
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
                 maxLength={80}
               />
+
             </View>
+
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>
+          {/* LOCATION */}
+
+          <View
+            style={
+              styles.inputGroup
+            }
+          >
+
+            <Text
+              style={
+                styles.inputLabel
+              }
+            >
               Location
             </Text>
 
-            <View style={styles.inputContainer}>
+            <View
+              style={
+                styles.inputContainer
+              }
+            >
+
               <Ionicons
                 name="location-outline"
                 size={20}
-                color={COLORS.textSecondary}
+                color={
+                  COLORS.textSecondary
+                }
               />
 
               <TextInput
                 value={location}
-                onChangeText={setLocation}
+                onChangeText={
+                  setLocation
+                }
                 placeholder="e.g. Seminar Hall"
                 placeholderTextColor={
                   COLORS.textLight
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
                 maxLength={100}
               />
+
             </View>
+
           </View>
+
         </View>
 
         {/* SCHEDULE */}
 
-        {meetingMode === 'schedule' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
+        {meetingMode ===
+          'schedule' && (
+
+          <View
+            style={
+              styles.section
+            }
+          >
+
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
               Schedule
             </Text>
 
             {/* DATE */}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>
+            <View
+              style={
+                styles.inputGroup
+              }
+            >
+
+              <Text
+                style={
+                  styles.inputLabel
+                }
+              >
                 Meeting Date
               </Text>
 
               <Pressable
-                style={styles.selectionCard}
+                style={
+                  styles.selectionCard
+                }
                 onPress={() =>
-                  setShowDatePicker(true)
+                  setShowDatePicker(
+                    true
+                  )
                 }
               >
-                <View style={styles.selectionIcon}>
+
+                <View
+                  style={
+                    styles.selectionIcon
+                  }
+                >
+
                   <Ionicons
                     name="calendar"
                     size={21}
-                    color={COLORS.navy}
+                    color={
+                      COLORS.navy
+                    }
                   />
+
                 </View>
 
                 <View
-                  style={styles.selectionTextContainer}
+                  style={
+                    styles.selectionTextContainer
+                  }
                 >
-                  <Text style={styles.selectionLabel}>
+
+                  <Text
+                    style={
+                      styles.selectionLabel
+                    }
+                  >
                     Date
                   </Text>
 
-                  <Text style={styles.selectionValue}>
-                    {formatDate(selectedDate)}
+                  <Text
+                    style={
+                      styles.selectionValue
+                    }
+                  >
+                    {formatDate(
+                      selectedDate
+                    )}
                   </Text>
+
                 </View>
 
                 <Ionicons
                   name="chevron-forward"
                   size={20}
-                  color={COLORS.textLight}
+                  color={
+                    COLORS.textLight
+                  }
                 />
+
               </Pressable>
+
             </View>
 
             {/* TIME */}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>
+            <View
+              style={
+                styles.inputGroup
+              }
+            >
+
+              <Text
+                style={
+                  styles.inputLabel
+                }
+              >
                 Meeting Time
               </Text>
 
               <Pressable
-                style={styles.selectionCard}
+                style={
+                  styles.selectionCard
+                }
                 onPress={() =>
-                  setShowTimePicker(true)
+                  setShowTimePicker(
+                    true
+                  )
                 }
               >
-                <View style={styles.selectionIcon}>
+
+                <View
+                  style={
+                    styles.selectionIcon
+                  }
+                >
+
                   <Ionicons
                     name="time"
                     size={21}
-                    color={COLORS.navy}
+                    color={
+                      COLORS.navy
+                    }
                   />
+
                 </View>
 
                 <View
-                  style={styles.selectionTextContainer}
+                  style={
+                    styles.selectionTextContainer
+                  }
                 >
-                  <Text style={styles.selectionLabel}>
+
+                  <Text
+                    style={
+                      styles.selectionLabel
+                    }
+                  >
                     Time
                   </Text>
 
-                  <Text style={styles.selectionValue}>
-                    {formatTime12Hour(selectedTime)}
+                  <Text
+                    style={
+                      styles.selectionValue
+                    }
+                  >
+                    {formatTime12Hour(
+                      selectedTime
+                    )}
                   </Text>
+
                 </View>
 
                 <Ionicons
                   name="chevron-forward"
                   size={20}
-                  color={COLORS.textLight}
+                  color={
+                    COLORS.textLight
+                  }
                 />
+
               </Pressable>
+
             </View>
+
+            {/* DATE PICKER */}
 
             {showDatePicker && (
               <DateTimePicker
-                value={selectedDate}
+                value={
+                  selectedDate
+                }
                 mode="date"
-                minimumDate={today}
+                minimumDate={
+                  today
+                }
                 display={
-                  Platform.OS === 'ios'
+                  Platform.OS ===
+                  'ios'
                     ? 'spinner'
                     : 'default'
                 }
-                onChange={handleDateChange}
+                onChange={
+                  handleDateChange
+                }
               />
             )}
+
+            {/* TIME PICKER */}
 
             {showTimePicker && (
               <DateTimePicker
-                value={selectedTime}
+                value={
+                  selectedTime
+                }
                 mode="time"
                 display={
-                  Platform.OS === 'ios'
+                  Platform.OS ===
+                  'ios'
                     ? 'spinner'
                     : 'default'
                 }
-                onChange={handleTimeChange}
+                onChange={
+                  handleTimeChange
+                }
               />
             )}
 
-            {isSameDay(selectedDate, today) && (
-              <View style={styles.infoBox}>
+            {/* INFO */}
+
+            {isSameDay(
+              selectedDate,
+              today
+            ) && (
+
+              <View
+                style={
+                  styles.infoBox
+                }
+              >
+
                 <Ionicons
                   name="information-circle-outline"
                   size={19}
-                  color={COLORS.navy}
+                  color={
+                    COLORS.navy
+                  }
                 />
 
-                <Text style={styles.infoText}>
-                  If you select today, the meeting time
-                  must be later than the current time.
+                <Text
+                  style={
+                    styles.infoText
+                  }
+                >
+                  If you select today,
+                  the meeting time
+                  must be later than
+                  the current time.
                 </Text>
+
               </View>
+
             )}
+
           </View>
+
         )}
 
         {/* DURATION */}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
+
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
             Meeting Duration
           </Text>
 
-          <View style={styles.durationGrid}>
-            {DURATION_OPTIONS.map((item) => {
-              const selected = duration === item;
+          <View
+            style={
+              styles.durationGrid
+            }
+          >
 
-              return (
-                <Pressable
-                  key={item}
-                  style={[
-                    styles.durationOption,
-                    selected &&
-                      styles.durationOptionActive,
-                  ]}
-                  onPress={() =>
-                    setDuration(item)
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.durationValue,
-                      selected &&
-                        styles.durationValueActive,
-                    ]}
-                  >
-                    {item}
-                  </Text>
+            {DURATION_OPTIONS.map(
+              (item) => {
 
-                  <Text
+                const selected =
+                  duration === item;
+
+                return (
+                  <Pressable
+                    key={item}
                     style={[
-                      styles.durationUnit,
+                      styles.durationOption,
                       selected &&
-                        styles.durationUnitActive,
+                        styles.durationOptionActive,
                     ]}
+                    onPress={() =>
+                      setDuration(
+                        item
+                      )
+                    }
                   >
-                    min
-                  </Text>
-                </Pressable>
-              );
-            })}
+
+                    <Text
+                      style={[
+                        styles.durationValue,
+                        selected &&
+                          styles.durationValueActive,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.durationUnit,
+                        selected &&
+                          styles.durationUnitActive,
+                      ]}
+                    >
+                      min
+                    </Text>
+
+                  </Pressable>
+                );
+              }
+            )}
+
           </View>
+
         </View>
 
         {/* ATTENDANCE INFORMATION */}
 
-        <View style={styles.attendanceInfo}>
-          <View style={styles.attendanceInfoIcon}>
+        <View
+          style={
+            styles.attendanceInfo
+          }
+        >
+
+          <View
+            style={
+              styles.attendanceInfoIcon
+            }
+          >
+
             <Ionicons
               name="radio-outline"
               size={22}
-              color={COLORS.navy}
+              color={
+                COLORS.navy
+              }
             />
+
           </View>
 
           <View
-            style={styles.attendanceInfoContent}
+            style={
+              styles.attendanceInfoContent
+            }
           >
-            <Text style={styles.attendanceInfoTitle}>
+
+            <Text
+              style={
+                styles.attendanceInfoTitle
+              }
+            >
               Automatic Proximity Attendance
             </Text>
 
-            <Text style={styles.attendanceInfoText}>
-              Members can automatically mark attendance
-              during the first 5 minutes after the
-              meeting starts.
+            <Text
+              style={
+                styles.attendanceInfoText
+              }
+            >
+              Members can automatically
+              mark attendance during
+              the first 5 minutes after
+              the meeting starts.
             </Text>
+
           </View>
+
         </View>
 
-        {/* CREATE BUTTON */}
+        {/* SUBMIT BUTTON */}
 
         <Pressable
-          style={styles.createButton}
-          onPress={handleCreateMeeting}
+          style={[
+            styles.createButton,
+            creating &&
+              styles.createButtonDisabled,
+          ]}
+          onPress={
+            handleCreateMeeting
+          }
+          disabled={creating}
         >
-          <Ionicons
-            name={
-              meetingMode === 'active'
-                ? 'play-circle-outline'
-                : 'calendar-outline'
-            }
-            size={22}
-            color={COLORS.white}
-          />
 
-          <Text style={styles.createButtonText}>
-            {meetingMode === 'active'
-              ? 'Create & Start Meeting'
-              : 'Schedule Meeting'}
-          </Text>
+          {creating ? (
+
+            <Text
+              style={
+                styles.createButtonText
+              }
+            >
+              {editMode
+                ? 'Saving...'
+                : 'Creating...'}
+            </Text>
+
+          ) : (
+
+            <>
+
+              <Ionicons
+                name={
+                  editMode
+                    ? 'checkmark-circle-outline'
+                    : meetingMode ===
+                      'active'
+                      ? 'play-circle-outline'
+                      : 'calendar-outline'
+                }
+                size={22}
+                color={
+                  COLORS.white
+                }
+              />
+
+              <Text
+                style={
+                  styles.createButtonText
+                }
+              >
+                {editMode
+                  ? 'Save Changes'
+                  : meetingMode ===
+                    'active'
+                    ? 'Create & Start Meeting'
+                    : 'Schedule Meeting'}
+              </Text>
+
+            </>
+
+          )}
+
         </Pressable>
 
-        <View style={styles.bottomSpace} />
+        <View
+          style={
+            styles.bottomSpace
+          }
+        />
+
       </ScrollView>
+
     </SafeAreaView>
   );
 }
 
+/* =========================================================
+   STYLES
+========================================================= */
+
 const styles = StyleSheet.create({
+
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
   },
 
   container: {
@@ -707,12 +1591,14 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 13,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor:
+      COLORS.border,
   },
 
   headerTextContainer: {
@@ -727,7 +1613,8 @@ const styles = StyleSheet.create({
 
   headerSubtitle: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     marginTop: 3,
   },
 
@@ -749,31 +1636,37 @@ const styles = StyleSheet.create({
   modeCard: {
     minHeight: 82,
     borderRadius: 18,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor:
+      COLORS.border,
     padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
   },
 
   modeCardActive: {
-    backgroundColor: COLORS.navy,
-    borderColor: COLORS.navy,
+    backgroundColor:
+      COLORS.navy,
+    borderColor:
+      COLORS.navy,
   },
 
   modeIcon: {
     width: 46,
     height: 46,
     borderRadius: 14,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 13,
   },
 
   modeIconActive: {
-    backgroundColor: COLORS.navyLight,
+    backgroundColor:
+      COLORS.navyLight,
   },
 
   modeTextContainer: {
@@ -792,7 +1685,8 @@ const styles = StyleSheet.create({
 
   modeDescription: {
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     marginTop: 4,
   },
 
@@ -814,9 +1708,11 @@ const styles = StyleSheet.create({
   inputContainer: {
     height: 54,
     borderRadius: 15,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor:
+      COLORS.border,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -832,9 +1728,11 @@ const styles = StyleSheet.create({
   selectionCard: {
     minHeight: 68,
     borderRadius: 16,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor:
+      COLORS.border,
     paddingHorizontal: 13,
     flexDirection: 'row',
     alignItems: 'center',
@@ -844,7 +1742,8 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 13,
-    backgroundColor: '#EEF3F9',
+    backgroundColor:
+      '#EEF3F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -856,7 +1755,8 @@ const styles = StyleSheet.create({
 
   selectionLabel: {
     fontSize: 11,
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontWeight: '600',
     marginBottom: 3,
   },
@@ -870,7 +1770,8 @@ const styles = StyleSheet.create({
   infoBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#EEF3F9',
+    backgroundColor:
+      '#EEF3F9',
     borderRadius: 13,
     padding: 12,
     marginTop: 2,
@@ -879,7 +1780,8 @@ const styles = StyleSheet.create({
   infoText: {
     flex: 1,
     marginLeft: 8,
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -894,16 +1796,20 @@ const styles = StyleSheet.create({
     width: '30%',
     minHeight: 58,
     borderRadius: 14,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor:
+      COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   durationOptionActive: {
-    backgroundColor: COLORS.navy,
-    borderColor: COLORS.navy,
+    backgroundColor:
+      COLORS.navy,
+    borderColor:
+      COLORS.navy,
   },
 
   durationValue: {
@@ -918,7 +1824,8 @@ const styles = StyleSheet.create({
 
   durationUnit: {
     fontSize: 10,
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     marginTop: 1,
   },
 
@@ -928,9 +1835,11 @@ const styles = StyleSheet.create({
 
   attendanceInfo: {
     flexDirection: 'row',
-    backgroundColor: '#FFF9E8',
+    backgroundColor:
+      '#FFF9E8',
     borderWidth: 1,
-    borderColor: '#F8E6A8',
+    borderColor:
+      '#F8E6A8',
     borderRadius: 17,
     padding: 14,
     marginBottom: 20,
@@ -940,7 +1849,8 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 13,
-    backgroundColor: '#FFF1BF',
+    backgroundColor:
+      '#FFF1BF',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 11,
@@ -960,13 +1870,15 @@ const styles = StyleSheet.create({
   attendanceInfoText: {
     fontSize: 12,
     lineHeight: 18,
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
   },
 
   createButton: {
     height: 56,
     borderRadius: 17,
-    backgroundColor: COLORS.navy,
+    backgroundColor:
+      COLORS.navy,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -981,6 +1893,10 @@ const styles = StyleSheet.create({
     },
   },
 
+  createButtonDisabled: {
+    opacity: 0.6,
+  },
+
   createButtonText: {
     color: COLORS.white,
     fontSize: 15,
@@ -990,4 +1906,5 @@ const styles = StyleSheet.create({
   bottomSpace: {
     height: 20,
   },
+
 });

@@ -7,6 +7,8 @@ import {
   ScrollView,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
+
 import { COLORS } from '../theme/colors';
 
 export default function EventsScreen() {
@@ -52,12 +54,30 @@ export default function EventsScreen() {
 }
 
 function EventCard({ title, date, type }) {
+  const getEventIcon = () => {
+    switch (type) {
+      case 'Technical Quiz':
+        return 'help-circle-outline';
+
+      case 'Hackathon':
+        return 'code-slash-outline';
+
+      case 'Workshop':
+        return 'construct-outline';
+
+      default:
+        return 'sparkles-outline';
+    }
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.icon}>
-        <Text style={styles.iconText}>
-          ⚡
-        </Text>
+        <Ionicons
+          name={getEventIcon()}
+          size={26}
+          color={COLORS.goldDark}
+        />
       </View>
 
       <View style={styles.details}>
@@ -69,10 +89,25 @@ function EventCard({ title, date, type }) {
           {title}
         </Text>
 
-        <Text style={styles.date}>
-          📅 {date}
-        </Text>
+        <View style={styles.dateRow}>
+          <Ionicons
+            name="calendar-outline"
+            size={14}
+            color={COLORS.textSecondary}
+          />
+
+          <Text style={styles.date}>
+            {date}
+          </Text>
+        </View>
       </View>
+
+      <Ionicons
+        name="chevron-forward"
+        size={20}
+        color={COLORS.textLight}
+        style={styles.arrow}
+      />
     </View>
   );
 }
@@ -107,6 +142,7 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     padding: 16,
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 12,
   },
 
@@ -117,10 +153,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF7D6',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-
-  iconText: {
-    fontSize: 25,
   },
 
   details: {
@@ -142,9 +174,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 7,
+  },
+
   date: {
     color: COLORS.textSecondary,
     fontSize: 11,
-    marginTop: 7,
+    marginLeft: 5,
+  },
+
+  arrow: {
+    marginLeft: 8,
   },
 });

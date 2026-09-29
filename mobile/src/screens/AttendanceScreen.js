@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+
 import {
   View,
   Text,
@@ -6,6 +7,9 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+
+import { Ionicons } from '@expo/vector-icons';
+
 import { COLORS } from '../theme/colors';
 
 export default function AttendanceScreen({ navigation }) {
@@ -56,12 +60,16 @@ export default function AttendanceScreen({ navigation }) {
     switch (status) {
       case 'searching':
         return 'Searching for Host';
+
       case 'detected':
         return 'Host Detected';
+
       case 'verifying':
         return 'Verifying Presence';
+
       case 'success':
         return 'Attendance Marked';
+
       default:
         return 'Ready for Attendance';
     }
@@ -94,6 +102,25 @@ export default function AttendanceScreen({ navigation }) {
     return COLORS.navy;
   };
 
+  const getStatusIcon = () => {
+    switch (status) {
+      case 'searching':
+        return 'search-outline';
+
+      case 'detected':
+        return 'bluetooth-outline';
+
+      case 'verifying':
+        return 'radio-outline';
+
+      case 'success':
+        return 'checkmark';
+
+      default:
+        return 'radio-outline';
+    }
+  };
+
   const progress =
     status === 'success'
       ? 100
@@ -108,17 +135,28 @@ export default function AttendanceScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Header */}
+
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
+          activeOpacity={0.8}
         >
-          <Text style={styles.backText}>‹</Text>
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color={COLORS.white}
+          />
         </TouchableOpacity>
 
-        <View>
-          <Text style={styles.headerTitle}>Attendance</Text>
-          <Text style={styles.headerSubtitle}>TechSutra Weekly Meeting</Text>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>
+            Attendance
+          </Text>
+
+          <Text style={styles.headerSubtitle}>
+            TechSutra Weekly Meeting
+          </Text>
         </View>
       </View>
 
@@ -127,9 +165,14 @@ export default function AttendanceScreen({ navigation }) {
         contentContainerStyle={styles.content}
       >
         {/* Meeting Info */}
+
         <View style={styles.meetingCard}>
           <View style={styles.meetingIcon}>
-            <Text style={styles.meetingIconText}>TS</Text>
+            <Ionicons
+              name="people-outline"
+              size={25}
+              color={COLORS.gold}
+            />
           </View>
 
           <View style={styles.meetingInfo}>
@@ -137,17 +180,34 @@ export default function AttendanceScreen({ navigation }) {
               TechSutra Weekly Meeting
             </Text>
 
-            <Text style={styles.meetingDetails}>
-              Today • 4:00 PM
-            </Text>
+            <View style={styles.meetingDetailRow}>
+              <Ionicons
+                name="calendar-outline"
+                size={14}
+                color={COLORS.textSecondary}
+              />
 
-            <Text style={styles.meetingLocation}>
-              TechSutra Club Room
-            </Text>
+              <Text style={styles.meetingDetails}>
+                Today • 4:00 PM
+              </Text>
+            </View>
+
+            <View style={styles.meetingDetailRow}>
+              <Ionicons
+                name="location-outline"
+                size={14}
+                color={COLORS.textLight}
+              />
+
+              <Text style={styles.meetingLocation}>
+                TechSutra Club Room
+              </Text>
+            </View>
           </View>
         </View>
 
         {/* Proximity Area */}
+
         <View style={styles.proximityContainer}>
           <View
             style={[
@@ -173,13 +233,11 @@ export default function AttendanceScreen({ navigation }) {
                   },
                 ]}
               >
-                <Text style={styles.radarText}>
-                  {status === 'success'
-                    ? '✓'
-                    : status === 'ready'
-                    ? '5m'
-                    : '•'}
-                </Text>
+                <Ionicons
+                  name={getStatusIcon()}
+                  size={30}
+                  color={COLORS.white}
+                />
               </View>
             </View>
           </View>
@@ -187,7 +245,9 @@ export default function AttendanceScreen({ navigation }) {
           <Text
             style={[
               styles.statusTitle,
-              { color: getStatusColor() },
+              {
+                color: getStatusColor(),
+              },
             ]}
           >
             {getStatusTitle()}
@@ -199,6 +259,7 @@ export default function AttendanceScreen({ navigation }) {
         </View>
 
         {/* Progress */}
+
         <View style={styles.progressSection}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel}>
@@ -224,8 +285,18 @@ export default function AttendanceScreen({ navigation }) {
         </View>
 
         {/* Timer */}
-        {(status === 'verifying' || status === 'success') && (
+
+        {(status === 'verifying' ||
+          status === 'success') && (
           <View style={styles.timerCard}>
+            <View style={styles.timerIcon}>
+              <Ionicons
+                name="time-outline"
+                size={19}
+                color={COLORS.navy}
+              />
+            </View>
+
             <Text style={styles.timerLabel}>
               Verification Time
             </Text>
@@ -241,12 +312,19 @@ export default function AttendanceScreen({ navigation }) {
         )}
 
         {/* Action */}
+
         {status === 'ready' && (
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={startAttendance}
             activeOpacity={0.85}
           >
+            <Ionicons
+              name="radio-outline"
+              size={20}
+              color={COLORS.white}
+            />
+
             <Text style={styles.primaryButtonText}>
               Start Attendance
             </Text>
@@ -255,6 +333,12 @@ export default function AttendanceScreen({ navigation }) {
 
         {status === 'searching' && (
           <View style={styles.waitingButton}>
+            <Ionicons
+              name="search-outline"
+              size={20}
+              color={COLORS.textSecondary}
+            />
+
             <Text style={styles.waitingButtonText}>
               Searching...
             </Text>
@@ -263,6 +347,12 @@ export default function AttendanceScreen({ navigation }) {
 
         {status === 'detected' && (
           <View style={styles.detectedButton}>
+            <Ionicons
+              name="bluetooth-outline"
+              size={20}
+              color="#3B82F6"
+            />
+
             <Text style={styles.detectedButtonText}>
               Host Detected
             </Text>
@@ -271,6 +361,12 @@ export default function AttendanceScreen({ navigation }) {
 
         {status === 'verifying' && (
           <View style={styles.verifyingButton}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={20}
+              color={COLORS.goldDark}
+            />
+
             <Text style={styles.verifyingButtonText}>
               Verifying Presence...
             </Text>
@@ -280,7 +376,13 @@ export default function AttendanceScreen({ navigation }) {
         {status === 'success' && (
           <>
             <View style={styles.successCard}>
-              <Text style={styles.successIcon}>✓</Text>
+              <View style={styles.successIcon}>
+                <Ionicons
+                  name="checkmark"
+                  size={25}
+                  color={COLORS.white}
+                />
+              </View>
 
               <View style={styles.successContent}>
                 <Text style={styles.successTitle}>
@@ -296,7 +398,14 @@ export default function AttendanceScreen({ navigation }) {
             <TouchableOpacity
               style={styles.secondaryButton}
               onPress={resetAttendance}
+              activeOpacity={0.8}
             >
+              <Ionicons
+                name="refresh-outline"
+                size={18}
+                color={COLORS.navy}
+              />
+
               <Text style={styles.secondaryButtonText}>
                 Test Again
               </Text>
@@ -305,49 +414,99 @@ export default function AttendanceScreen({ navigation }) {
         )}
 
         {/* How It Works */}
+
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>
-            How proximity attendance works
-          </Text>
-
-          <View style={styles.infoRow}>
-            <View style={styles.numberCircle}>
-              <Text style={styles.numberText}>1</Text>
+          <View style={styles.infoTitleRow}>
+            <View style={styles.infoTitleIcon}>
+              <Ionicons
+                name="information-circle-outline"
+                size={19}
+                color={COLORS.navy}
+              />
             </View>
 
-            <Text style={styles.infoText}>
-              The meeting host starts an attendance session.
+            <Text style={styles.infoTitle}>
+              How proximity attendance works
             </Text>
           </View>
 
           <View style={styles.infoRow}>
             <View style={styles.numberCircle}>
-              <Text style={styles.numberText}>2</Text>
+              <Text style={styles.numberText}>
+                1
+              </Text>
             </View>
 
-            <Text style={styles.infoText}>
-              Your phone detects the host using nearby-device
-              proximity.
-            </Text>
+            <View style={styles.infoContent}>
+              <Ionicons
+                name="radio-outline"
+                size={17}
+                color={COLORS.navy}
+              />
+
+              <Text style={styles.infoText}>
+                The meeting host starts an attendance session.
+              </Text>
+            </View>
           </View>
 
           <View style={styles.infoRow}>
             <View style={styles.numberCircle}>
-              <Text style={styles.numberText}>3</Text>
+              <Text style={styles.numberText}>
+                2
+              </Text>
             </View>
 
-            <Text style={styles.infoText}>
-              Your presence is continuously verified before
-              attendance is recorded.
-            </Text>
+            <View style={styles.infoContent}>
+              <Ionicons
+                name="bluetooth-outline"
+                size={17}
+                color={COLORS.navy}
+              />
+
+              <Text style={styles.infoText}>
+                Your phone detects the host using nearby-device
+                proximity.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.infoRowLast}>
+            <View style={styles.numberCircle}>
+              <Text style={styles.numberText}>
+                3
+              </Text>
+            </View>
+
+            <View style={styles.infoContent}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={17}
+                color={COLORS.navy}
+              />
+
+              <Text style={styles.infoText}>
+                Your presence is continuously verified before
+                attendance is recorded.
+              </Text>
+            </View>
           </View>
         </View>
 
         {/* Important Note */}
+
         <View style={styles.noteCard}>
-          <Text style={styles.noteTitle}>
-            ⚠ Proximity requirement
-          </Text>
+          <View style={styles.noteTitleRow}>
+            <Ionicons
+              name="warning-outline"
+              size={18}
+              color="#8A6500"
+            />
+
+            <Text style={styles.noteTitle}>
+              Proximity requirement
+            </Text>
+          </View>
 
           <Text style={styles.noteText}>
             Keep your phone near the meeting host during the
@@ -385,11 +544,8 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
 
-  backText: {
-    color: COLORS.white,
-    fontSize: 34,
-    lineHeight: 34,
-    marginTop: -4,
+  headerTextContainer: {
+    flex: 1,
   },
 
   headerTitle: {
@@ -430,12 +586,6 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
 
-  meetingIconText: {
-    color: COLORS.gold,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
   meetingInfo: {
     flex: 1,
   },
@@ -446,16 +596,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  meetingDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+
   meetingDetails: {
     color: COLORS.textSecondary,
     fontSize: 12,
-    marginTop: 5,
+    marginLeft: 5,
   },
 
   meetingLocation: {
     color: COLORS.textLight,
     fontSize: 11,
-    marginTop: 2,
+    marginLeft: 5,
   },
 
   proximityContainer: {
@@ -489,12 +645,6 @@ const styles = StyleSheet.create({
     borderRadius: 41,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-
-  radarText: {
-    color: COLORS.white,
-    fontSize: 25,
-    fontWeight: '900',
   },
 
   statusTitle: {
@@ -556,6 +706,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
+  timerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#EEF3F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 7,
+  },
+
   timerLabel: {
     color: COLORS.textSecondary,
     fontSize: 11,
@@ -581,6 +741,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.navy,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 20,
   },
 
@@ -596,6 +758,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8EDF4',
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 20,
   },
 
@@ -611,6 +775,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F1FF',
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 20,
   },
 
@@ -626,6 +792,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF6D8',
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 20,
   },
 
@@ -651,11 +819,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     backgroundColor: COLORS.success,
-    color: COLORS.white,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    fontSize: 24,
-    fontWeight: '900',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 13,
   },
 
@@ -683,6 +848,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 7,
     marginBottom: 20,
   },
 
@@ -701,17 +868,38 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
+  infoTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+
+  infoTitleIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#EEF3F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
+  },
+
   infoTitle: {
+    flex: 1,
     color: COLORS.text,
     fontSize: 15,
     fontWeight: '800',
-    marginBottom: 15,
   },
 
   infoRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 14,
+  },
+
+  infoRowLast: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
 
   numberCircle: {
@@ -730,12 +918,19 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
+  infoContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingTop: 3,
+  },
+
   infoText: {
     flex: 1,
     color: COLORS.textSecondary,
     fontSize: 12,
     lineHeight: 18,
-    paddingTop: 3,
+    marginLeft: 7,
   },
 
   noteCard: {
@@ -746,11 +941,17 @@ const styles = StyleSheet.create({
     borderColor: '#F6E5A8',
   },
 
+  noteTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+
   noteTitle: {
     color: '#8A6500',
     fontSize: 13,
     fontWeight: '800',
-    marginBottom: 6,
+    marginLeft: 6,
   },
 
   noteText: {

@@ -1,4 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
 import {
   Alert,
   Pressable,
@@ -6,6 +12,7 @@ import {
   StyleSheet,
   Text,
   View,
+  ActivityIndicator,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,196 +21,453 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../theme/colors';
 
 import {
-  getActiveMeeting,
-  getAutomaticAttendanceRemainingSeconds,
-  isAutomaticAttendanceOpen,
-  closeAutomaticAttendance,
-  markMemberManually,
+  getActiveMeetings,
+  getMeetingById,
   endMeeting,
-} from '../../services/meetingStore';
+} from '../../services/meetingService';
 
-/*
-|--------------------------------------------------------------------------
-| Demo Members
-|--------------------------------------------------------------------------
-|
-| Later this will come from FastAPI/PostgreSQL.
-|--------------------------------------------------------------------------
-*/
+import {
+  getMembers,
+  getMeetingAttendance,
+  markAttendance,
+} from '../../services/attendanceService';
 
-const DEMO_MEMBERS = [
-  {
-    id: 'TS001',
-    name: 'Rahul Sharma',
-  },
-  {
-    id: 'TS002',
-    name: 'Priya Singh',
-  },
-  {
-    id: 'TS003',
-    name: 'Aman Verma',
-  },
-  {
-    id: 'TS004',
-    name: 'Neha Gupta',
-  },
-];
 
-/*
-|--------------------------------------------------------------------------
-| Format Countdown
-|--------------------------------------------------------------------------
-*/
+const AUTOMATIC_ATTENDANCE_DURATION_SECONDS = 5 * 60;
+
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
 
 const formatTime = (seconds) => {
-  const safeSeconds = Math.max(
-    0,
-    Number(seconds) || 0
-  );
+  const safeSeconds = Math.max(0, Number(seconds) || 0);
 
-  const minutes = Math.floor(
-    safeSeconds / 60
-  );
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
 
-  const remainingSeconds =
-    safeSeconds % 60;
-
-  return `${String(minutes).padStart(
-    2,
-    '0'
-  )}:${String(remainingSeconds).padStart(
-    2,
-    '0'
-  )}`;
+  return `${String(minutes).padStart(2, '0')}:${String(
+    remainingSeconds
+  ).padStart(2, '0')}`;
 };
 
-/*
-|--------------------------------------------------------------------------
-| Live Attendance Screen
-|--------------------------------------------------------------------------
-*/
+
+const getStartedAtMillis = (meeting) => {
+  if (!meeting?.startedAt) {
+    return null;
+  }
+
+  try {
+    if (typeof meeting.startedAt.toMillis === 'function') {
+      return meeting.startedAt.toMillis();
+    }
+
+    if (typeof meeting.startedAt.toDate === 'function') {
+      return meeting.startedAt.toDate().getTime();
+    }
+
+    if (meeting.startedAt instanceof Date) {
+      return meeting.startedAt.getTime();
+    }
+
+    if (typeof meeting.startedAt === 'number') {
+      return meeting.startedAt;
+    }
+
+    return null;
+  } catch (error) {
+    console.log('getStartedAtMillis error:', error);
+    return null;
+  }
+};
+
+
+const getAutomaticAttendanceRemaining = (meeting) => {
+  const startedAtMillis = getStartedAtMillis(meeting);
+
+  if (!startedAtMillis) {
+    return 0;
+  }
+
+  const elapsedSeconds = Math.floor(
+    (Date.now() - startedAtMillis) / 1000
+  );
+
+  return Math.max(
+    0,
+    AUTOMATIC_ATTENDANCE_DURATION_SECONDS - elapsedSeconds
+  );
+};
+
+
+const isAutomaticAttendanceAvailable = (meeting) => {
+  if (!meeting || meeting.status !== 'active') {
+    return false;
+  }
+
+  return getAutomaticAttendanceRemaining(meeting) > 0;
+};
+
+
+const getMeetingDisplayTime = (meeting) => {
+  return meeting?.startTime || meeting?.time || '--';
+};
+
+
+const getMeetingDisplayDate = (meeting) => {
+  return meeting?.date || '--';
+};
+
+
+const getSessionId = (meeting) => {
+  if (meeting?.sessionId) {
+    return meeting.sessionId;
+  }
+
+  if (meeting?.id) {
+    return meeting.id.slice(0, 12).toUpperCase();
+  }
+
+  return 'PENDING';
+};
+
+
+/* -------------------------------------------------------------------------- */
+/* Live Attendance Screen                                                     */
+/* -------------------------------------------------------------------------- */
 
 export default function LiveAttendanceScreen({
   navigation,
+  route,
 }) {
-  const [meeting, setMeeting] = useState(
-    () => getActiveMeeting()
+  const routeMeetingId = route?.params?.meetingId || null;
+
+  const [meeting, setMeeting] = useState(null);
+  const [meetingId, setMeetingId] = useState(routeMeetingId);
+
+  const [members, setMembers] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshingMeeting, setRefreshingMeeting] = useState(false);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
+  const [savingAttendanceUid, setSavingAttendanceUid] =
+    useState(null);
+
+  const [remaining, setRemaining] = useState(0);
+  const [automaticOpen, setAutomaticOpen] = useState(false);
+
+
+  /* ---------------------------------------------------------------------- */
+  /* Load Members                                                           */
+  /* ---------------------------------------------------------------------- */
+
+  const loadMembers = useCallback(async () => {
+    try {
+      setLoadingMembers(true);
+
+      const memberList = await getMembers();
+
+      setMembers(memberList || []);
+
+      console.log(
+        'LiveAttendance members loaded:',
+        memberList?.length || 0
+      );
+    } catch (error) {
+      console.log('loadMembers error:', error);
+
+      Alert.alert(
+        'Members Error',
+        error?.message ||
+          'Members could not be loaded from Firebase.'
+      );
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, []);
+
+
+  /* ---------------------------------------------------------------------- */
+  /* Load Attendance                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  const loadAttendance = useCallback(async (id) => {
+    if (!id) {
+      return;
+    }
+
+    try {
+      const records = await getMeetingAttendance(id);
+
+      setAttendanceRecords(records || []);
+
+      console.log(
+        'LiveAttendance records loaded:',
+        records?.length || 0
+      );
+    } catch (error) {
+      console.log('loadAttendance error:', error);
+
+      Alert.alert(
+        'Attendance Error',
+        error?.message ||
+          'Attendance could not be loaded from Firebase.'
+      );
+    }
+  }, []);
+
+
+  /* ---------------------------------------------------------------------- */
+  /* Load Meeting                                                           */
+  /* ---------------------------------------------------------------------- */
+
+  const loadMeeting = useCallback(
+    async (showLoader = false) => {
+      try {
+        if (showLoader) {
+          setLoading(true);
+        } else {
+          setRefreshingMeeting(true);
+        }
+
+        let loadedMeeting = null;
+
+        if (meetingId) {
+          loadedMeeting = await getMeetingById(meetingId);
+        }
+
+        if (!loadedMeeting && !meetingId) {
+          const activeMeetings = await getActiveMeetings();
+
+          if (activeMeetings.length > 0) {
+            loadedMeeting = activeMeetings[0];
+
+            setMeetingId(activeMeetings[0].id);
+          }
+        }
+
+        if (!loadedMeeting) {
+          setMeeting(null);
+          setRemaining(0);
+          setAutomaticOpen(false);
+          return;
+        }
+
+        setMeeting(loadedMeeting);
+
+        const seconds =
+          getAutomaticAttendanceRemaining(loadedMeeting);
+
+        setRemaining(seconds);
+
+        setAutomaticOpen(
+          isAutomaticAttendanceAvailable(loadedMeeting)
+        );
+
+        await loadAttendance(loadedMeeting.id);
+      } catch (error) {
+        console.log(
+          'LiveAttendance loadMeeting error:',
+          error
+        );
+
+        Alert.alert(
+          'Unable to Load Meeting',
+          error?.message ||
+            'The meeting could not be loaded from Firebase.'
+        );
+      } finally {
+        setLoading(false);
+        setRefreshingMeeting(false);
+      }
+    },
+    [meetingId, loadAttendance]
   );
 
-  const [remaining, setRemaining] = useState(
-    () =>
-      getAutomaticAttendanceRemainingSeconds()
-  );
 
-  const [automaticOpen, setAutomaticOpen] =
-    useState(() =>
-      isAutomaticAttendanceOpen()
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | Countdown
-  |--------------------------------------------------------------------------
-  */
+  /* ---------------------------------------------------------------------- */
+  /* Initial Load                                                           */
+  /* ---------------------------------------------------------------------- */
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const activeMeeting =
-        getActiveMeeting();
+    loadMeeting(true);
+    loadMembers();
+  }, [loadMeeting, loadMembers]);
 
-      /*
-       * Meeting no longer exists.
-       */
-      if (!activeMeeting) {
-        setMeeting(null);
-        setRemaining(0);
-        setAutomaticOpen(false);
 
-        return;
+  /* ---------------------------------------------------------------------- */
+  /* Refresh Attendance Every 5 Seconds                                     */
+  /* ---------------------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!meetingId) {
+      return undefined;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const updatedMeeting =
+          await getMeetingById(meetingId);
+
+        if (!updatedMeeting) {
+          setMeeting(null);
+          setRemaining(0);
+          setAutomaticOpen(false);
+          return;
+        }
+
+        setMeeting(updatedMeeting);
+
+        const seconds =
+          getAutomaticAttendanceRemaining(
+            updatedMeeting
+          );
+
+        setRemaining(seconds);
+
+        setAutomaticOpen(
+          isAutomaticAttendanceAvailable(
+            updatedMeeting
+          )
+        );
+
+        await loadAttendance(meetingId);
+      } catch (error) {
+        console.log(
+          'LiveAttendance polling error:',
+          error
+        );
       }
+    }, 5000);
 
-      /*
-       * Refresh meeting state.
-       */
-      setMeeting(activeMeeting);
+    return () => clearInterval(interval);
+  }, [meetingId, loadAttendance]);
 
-      /*
-       * Check whether automatic attendance
-       * is still available.
-       */
-      const open =
-        isAutomaticAttendanceOpen();
 
-      setAutomaticOpen(open);
+  /* ---------------------------------------------------------------------- */
+  /* Countdown                                                              */
+  /* ---------------------------------------------------------------------- */
 
-      /*
-       * Get remaining seconds.
-       */
+  useEffect(() => {
+    if (!meeting) {
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
       const seconds =
-        getAutomaticAttendanceRemainingSeconds();
+        getAutomaticAttendanceRemaining(meeting);
 
       setRemaining(seconds);
 
-      /*
-       * If the timer reaches zero,
-       * automatically close the proximity window.
-       */
-      if (seconds <= 0 && open) {
-        const updatedMeeting =
-          closeAutomaticAttendance();
-
-        if (updatedMeeting) {
-          setMeeting(updatedMeeting);
-        }
-
+      if (
+        meeting.status === 'active' &&
+        seconds > 0
+      ) {
+        setAutomaticOpen(true);
+      } else {
         setAutomaticOpen(false);
       }
     }, 1000);
 
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
+    return () => clearInterval(interval);
+  }, [meeting]);
 
-  /*
-  |--------------------------------------------------------------------------
-  | Manual Attendance
-  |--------------------------------------------------------------------------
-  */
 
-  const setManual = (
-    member,
-    status
-  ) => {
-    const updatedMeeting =
-      markMemberManually(
-        member.id,
-        status
+  /* ---------------------------------------------------------------------- */
+  /* Manual Attendance -> FIRESTORE                                         */
+  /* ---------------------------------------------------------------------- */
+
+  const setManual = async (member, status) => {
+    if (!meetingId) {
+      Alert.alert(
+        'Meeting Error',
+        'Meeting ID is missing.'
       );
-
-    if (!updatedMeeting) {
       return;
     }
 
-    setMeeting(updatedMeeting);
+    if (!member?.uid) {
+      Alert.alert(
+        'Member Error',
+        'This member does not have a valid Firebase UID.'
+      );
+      return;
+    }
 
-    Alert.alert(
-      'Attendance Updated',
-      `${member.name} has been marked ${status}.`
-    );
+    try {
+      setSavingAttendanceUid(member.uid);
+
+      console.log(
+        'Saving attendance:',
+        {
+          meetingId,
+          uid: member.uid,
+          memberId: member.memberId,
+          memberName: member.name,
+          status,
+        }
+      );
+
+      await markAttendance({
+        meetingId,
+        uid: member.uid,
+        memberId: member.memberId || '',
+        memberName: member.name || '',
+        status,
+        method: 'manual',
+      });
+
+      await loadAttendance(meetingId);
+
+      Alert.alert(
+        'Attendance Updated',
+        `${member.name} has been marked ${status}.`
+      );
+    } catch (error) {
+      console.log(
+        'setManual error:',
+        error
+      );
+
+      Alert.alert(
+        'Attendance Error',
+        error?.message ||
+          'Attendance could not be saved.'
+      );
+    } finally {
+      setSavingAttendanceUid(null);
+    }
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | End Meeting
-  |--------------------------------------------------------------------------
-  */
+
+  /* ---------------------------------------------------------------------- */
+  /* Close Automatic Attendance                                             */
+  /* ---------------------------------------------------------------------- */
+
+  const closeAutomaticAttendance = () => {
+    setAutomaticOpen(false);
+    setRemaining(0);
+  };
+
+
+  /* ---------------------------------------------------------------------- */
+  /* End Meeting                                                            */
+  /* ---------------------------------------------------------------------- */
 
   const finish = () => {
+    if (!meetingId) {
+      Alert.alert(
+        'Meeting Error',
+        'Meeting ID is missing.'
+      );
+      return;
+    }
+
     Alert.alert(
       'End Meeting?',
-      'This will end the attendance session and save the attendance in local history.',
+      'This will end the live attendance session and mark the meeting as completed.',
       [
         {
           text: 'Cancel',
@@ -212,53 +476,131 @@ export default function LiveAttendanceScreen({
         {
           text: 'End Meeting',
           style: 'destructive',
-          onPress: () => {
-            const completedMeeting =
-              endMeeting();
+          onPress: async () => {
+            try {
+              setRefreshingMeeting(true);
 
-            if (!completedMeeting) {
-              return;
-            }
+              await endMeeting(meetingId);
 
-            setMeeting(null);
-            setRemaining(0);
-            setAutomaticOpen(false);
+              setMeeting(null);
+              setRemaining(0);
+              setAutomaticOpen(false);
 
-            Alert.alert(
-              'Meeting Completed',
-              'The attendance session has been successfully closed.',
-              [
-                {
-                  text: 'Back to Dashboard',
-                  onPress: () => {
-                    navigation.navigate(
-                      'AdminDashboard'
-                    );
+              Alert.alert(
+                'Meeting Completed',
+                'The meeting has been successfully completed.',
+                [
+                  {
+                    text: 'Back to Dashboard',
+                    onPress: () => {
+                      navigation.navigate(
+                        'PresidentTabs',
+                        {
+                          screen: 'Dashboard',
+                        }
+                      );
+                    },
                   },
-                },
-              ]
-            );
+                ]
+              );
+            } catch (error) {
+              console.log(
+                'LiveAttendance finish error:',
+                error
+              );
+
+              Alert.alert(
+                'Unable to End Meeting',
+                error?.message ||
+                  'The meeting could not be ended. Please try again.'
+              );
+            } finally {
+              setRefreshingMeeting(false);
+            }
           },
         },
       ]
     );
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | No Active Meeting
-  |--------------------------------------------------------------------------
-  */
 
-  if (!meeting) {
+  /* ---------------------------------------------------------------------- */
+  /* Attendance Statistics                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  const presentCount = useMemo(() => {
+    return attendanceRecords.filter(
+      (record) =>
+        record.status === 'present'
+    ).length;
+  }, [attendanceRecords]);
+
+
+  const absentCount = useMemo(() => {
+    return attendanceRecords.filter(
+      (record) =>
+        record.status === 'absent'
+    ).length;
+  }, [attendanceRecords]);
+
+
+  const totalMembers = members.length;
+
+
+  const getMemberRecord = (uid) => {
+    return attendanceRecords.find(
+      (record) => record.uid === uid
+    );
+  };
+
+
+  /* ---------------------------------------------------------------------- */
+  /* Loading State                                                          */
+  /* ---------------------------------------------------------------------- */
+
+  if (loading) {
     return (
       <SafeAreaView
         style={styles.safeArea}
-        edges={[
-          'top',
-          'left',
-          'right',
-        ]}
+        edges={['top', 'left', 'right']}
+      >
+        <View style={styles.loadingPage}>
+          <View style={styles.loadingIcon}>
+            <Ionicons
+              name="cloud-download-outline"
+              size={40}
+              color={COLORS.navy}
+            />
+          </View>
+
+          <Text style={styles.loadingTitle}>
+            Loading Meeting
+          </Text>
+
+          <Text style={styles.loadingSubtitle}>
+            Fetching live meeting data and members from Firebase...
+          </Text>
+
+          <ActivityIndicator
+            size="small"
+            color={COLORS.navy}
+            style={styles.loadingSpinner}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+
+  /* ---------------------------------------------------------------------- */
+  /* No Active Meeting                                                      */
+  /* ---------------------------------------------------------------------- */
+
+  if (!meeting || meeting.status !== 'active') {
+    return (
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={['top', 'left', 'right']}
       >
         <View style={styles.emptyPage}>
           <View style={styles.emptyIcon}>
@@ -274,18 +616,27 @@ export default function LiveAttendanceScreen({
           </Text>
 
           <Text style={styles.emptySubtitle}>
-            There is currently no active attendance
-            session.
+            There is currently no active attendance session.
           </Text>
 
           <Pressable
             style={styles.dashboardButton}
             onPress={() =>
               navigation.navigate(
-                'AdminDashboard'
+                'PresidentTabs',
+                {
+                  screen: 'Dashboard',
+                }
               )
             }
           >
+            <Ionicons
+              name="arrow-back-outline"
+              size={18}
+              color={COLORS.white}
+              style={styles.dashboardButtonIcon}
+            />
+
             <Text style={styles.dashboardButtonText}>
               Back to Dashboard
             </Text>
@@ -295,77 +646,44 @@ export default function LiveAttendanceScreen({
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Attendance Records
-  |--------------------------------------------------------------------------
-  */
 
-  const attendanceRecords =
-    Array.isArray(meeting.attendance)
-      ? meeting.attendance
-      : [];
+  /* ---------------------------------------------------------------------- */
+  /* Progress                                                               */
+  /* ---------------------------------------------------------------------- */
 
-  const getMemberRecord = (
-    memberId
-  ) => {
-    return attendanceRecords.find(
-      (record) =>
-        record.memberId === memberId
-    );
-  };
+  const totalSeconds =
+    AUTOMATIC_ATTENDANCE_DURATION_SECONDS;
 
-  const presentCount =
-    attendanceRecords.filter(
-      (record) =>
-        record.status === 'present'
-    ).length;
+  const progress = Math.max(
+    0,
+    Math.min(
+      1,
+      remaining / totalSeconds
+    )
+  );
 
-  const absentCount =
-    attendanceRecords.filter(
-      (record) =>
-        record.status === 'absent'
-    ).length;
 
-  /*
-  |--------------------------------------------------------------------------
-  | Progress
-  |--------------------------------------------------------------------------
-  */
-
-  const totalSeconds = 5 * 60;
-
-  const progress =
-    Math.max(
-      0,
-      Math.min(
-        1,
-        remaining / totalSeconds
-      )
-    );
+  /* ---------------------------------------------------------------------- */
+  /* Render                                                                 */
+  /* ---------------------------------------------------------------------- */
 
   return (
     <SafeAreaView
       style={styles.safeArea}
-      edges={[
-        'top',
-        'left',
-        'right',
-      ]}
+      edges={['top', 'left', 'right']}
     >
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+
         {/* HEADER */}
 
         <View style={styles.header}>
           <Pressable
             style={styles.backButton}
-            onPress={() =>
-              navigation.goBack()
-            }
+            onPress={() => navigation.goBack()}
           >
             <Ionicons
               name="arrow-back"
@@ -393,6 +711,37 @@ export default function LiveAttendanceScreen({
           </View>
         </View>
 
+
+        {/* FIREBASE STATUS */}
+
+        <View style={styles.firebaseStatus}>
+          <View style={styles.firebaseStatusIcon}>
+            <Ionicons
+              name="cloud-done-outline"
+              size={16}
+              color={COLORS.success}
+            />
+          </View>
+
+          <View style={styles.firebaseStatusTextContainer}>
+            <Text style={styles.firebaseStatusTitle}>
+              Live meeting connected
+            </Text>
+
+            <Text style={styles.firebaseStatusSubtitle}>
+              Attendance is synced with Firebase
+            </Text>
+          </View>
+
+          {refreshingMeeting && (
+            <ActivityIndicator
+              size="small"
+              color={COLORS.navy}
+            />
+          )}
+        </View>
+
+
         {/* MEETING INFORMATION */}
 
         <View style={styles.meetingCard}>
@@ -418,7 +767,8 @@ export default function LiveAttendanceScreen({
                 />
 
                 <Text style={styles.locationText}>
-                  {meeting.location}
+                  {meeting.location ||
+                    'Location not specified'}
                 </Text>
               </View>
             </View>
@@ -426,36 +776,61 @@ export default function LiveAttendanceScreen({
 
           <View style={styles.detailsRow}>
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>
-                Date
-              </Text>
+              <View style={styles.detailLabelRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={12}
+                  color={COLORS.textSecondary}
+                />
+
+                <Text style={styles.detailLabel}>
+                  Date
+                </Text>
+              </View>
 
               <Text style={styles.detailValue}>
-                {meeting.date}
+                {getMeetingDisplayDate(meeting)}
               </Text>
             </View>
 
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>
-                Time
-              </Text>
+              <View style={styles.detailLabelRow}>
+                <Ionicons
+                  name="time-outline"
+                  size={12}
+                  color={COLORS.textSecondary}
+                />
+
+                <Text style={styles.detailLabel}>
+                  Time
+                </Text>
+              </View>
 
               <Text style={styles.detailValue}>
-                {meeting.time}
+                {getMeetingDisplayTime(meeting)}
               </Text>
             </View>
 
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>
-                Duration
-              </Text>
+              <View style={styles.detailLabelRow}>
+                <Ionicons
+                  name="hourglass-outline"
+                  size={12}
+                  color={COLORS.textSecondary}
+                />
+
+                <Text style={styles.detailLabel}>
+                  Duration
+                </Text>
+              </View>
 
               <Text style={styles.detailValue}>
-                {meeting.duration} min
+                {meeting.duration || 30} min
               </Text>
             </View>
           </View>
         </View>
+
 
         {/* AUTOMATIC ATTENDANCE */}
 
@@ -526,16 +901,12 @@ export default function LiveAttendanceScreen({
             {formatTime(remaining)}
           </Text>
 
-          {/* PROGRESS BAR */}
-
           <View style={styles.progressBackground}>
             <View
               style={[
                 styles.progressFill,
                 {
-                  width: `${
-                    progress * 100
-                  }%`,
+                  width: `${progress * 100}%`,
                 },
                 !automaticOpen &&
                   styles.progressFillClosed,
@@ -573,20 +944,15 @@ export default function LiveAttendanceScreen({
 
           {automaticOpen && (
             <Pressable
-              onPress={() => {
-                const updatedMeeting =
-                  closeAutomaticAttendance();
-
-                if (updatedMeeting) {
-                  setMeeting(
-                    updatedMeeting
-                  );
-                }
-
-                setAutomaticOpen(false);
-                setRemaining(0);
-              }}
+              style={styles.closeAttendanceButton}
+              onPress={closeAutomaticAttendance}
             >
+              <Ionicons
+                name="close-circle-outline"
+                size={16}
+                color={COLORS.gold}
+              />
+
               <Text style={styles.closeLink}>
                 Close automatic attendance early
               </Text>
@@ -594,10 +960,24 @@ export default function LiveAttendanceScreen({
           )}
         </View>
 
+
         {/* STATS */}
 
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIcon,
+                styles.presentStatIcon,
+              ]}
+            >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={19}
+                color={COLORS.success}
+              />
+            </View>
+
             <Text style={styles.statNumber}>
               {presentCount}
             </Text>
@@ -607,9 +987,23 @@ export default function LiveAttendanceScreen({
             </Text>
           </View>
 
+
           <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIcon,
+                styles.memberStatIcon,
+              ]}
+            >
+              <Ionicons
+                name="people-outline"
+                size={19}
+                color={COLORS.navy}
+              />
+            </View>
+
             <Text style={styles.statNumber}>
-              {DEMO_MEMBERS.length}
+              {totalMembers}
             </Text>
 
             <Text style={styles.statLabel}>
@@ -617,7 +1011,21 @@ export default function LiveAttendanceScreen({
             </Text>
           </View>
 
+
           <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIcon,
+                styles.absentStatIcon,
+              ]}
+            >
+              <Ionicons
+                name="close-circle-outline"
+                size={19}
+                color={COLORS.danger}
+              />
+            </View>
+
             <Text style={styles.statNumber}>
               {absentCount}
             </Text>
@@ -628,6 +1036,7 @@ export default function LiveAttendanceScreen({
           </View>
         </View>
 
+
         {/* MEMBER SECTION */}
 
         <View style={styles.sectionHeader}>
@@ -637,170 +1046,252 @@ export default function LiveAttendanceScreen({
             </Text>
 
             <Text style={styles.sectionSubtitle}>
-              Manual marking remains available
+              Manual marking is saved directly to Firebase
             </Text>
           </View>
 
           <View style={styles.sessionBadge}>
+            <Ionicons
+              name="key-outline"
+              size={11}
+              color={COLORS.navy}
+              style={styles.sessionIcon}
+            />
+
             <Text style={styles.sessionBadgeText}>
-              {meeting.sessionId}
+              {getSessionId(meeting)}
             </Text>
           </View>
         </View>
 
-        {/* MEMBERS */}
 
-        {DEMO_MEMBERS.map((member) => {
-          const record =
-            getMemberRecord(
-              member.id
+        {/* MEMBER LIST */}
+
+        {loadingMembers ? (
+          <View style={styles.membersLoading}>
+            <ActivityIndicator
+              size="small"
+              color={COLORS.navy}
+            />
+
+            <Text style={styles.membersLoadingText}>
+              Loading members...
+            </Text>
+          </View>
+        ) : members.length === 0 ? (
+          <View style={styles.noMembersCard}>
+            <Ionicons
+              name="people-outline"
+              size={35}
+              color={COLORS.textSecondary}
+            />
+
+            <Text style={styles.noMembersTitle}>
+              No Members Found
+            </Text>
+
+            <Text style={styles.noMembersText}>
+              No Firebase users with the member role were found.
+            </Text>
+          </View>
+        ) : (
+          members.map((member) => {
+            const record = getMemberRecord(
+              member.uid
             );
 
-          const isPresent =
-            record?.status ===
-            'present';
+            const isPresent =
+              record?.status === 'present';
 
-          const isAbsent =
-            record?.status ===
-            'absent';
+            const isAbsent =
+              record?.status === 'absent';
 
-          return (
-            <View
-              key={member.id}
-              style={styles.memberCard}
-            >
-              <View style={styles.memberAvatar}>
-                <Text
-                  style={
-                    styles.memberAvatarText
-                  }
-                >
-                  {member.name
-                    .charAt(0)
-                    .toUpperCase()}
-                </Text>
-              </View>
+            const isSaving =
+              savingAttendanceUid === member.uid;
 
-              <View style={styles.memberInfo}>
-                <Text
-                  style={styles.memberName}
-                >
-                  {member.name}
-                </Text>
+            return (
+              <View
+                key={member.uid}
+                style={styles.memberCard}
+              >
+                <View style={styles.memberTop}>
+                  <View style={styles.memberAvatar}>
+                    <Text
+                      style={styles.memberAvatarText}
+                    >
+                      {(member.name || '?')
+                        .charAt(0)
+                        .toUpperCase()}
+                    </Text>
+                  </View>
 
-                <Text
-                  style={styles.memberId}
-                >
-                  {member.id}
-                </Text>
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>
+                      {member.name ||
+                        'Unnamed Member'}
+                    </Text>
 
-                {record && (
-                  <Text
-                    style={
-                      styles.methodText
-                    }
-                  >
-                    {record.method ===
-                    'manual'
-                      ? 'Manually marked'
-                      : 'Proximity verified'}
-                  </Text>
-                )}
-              </View>
+                    <Text style={styles.memberId}>
+                      {member.memberId ||
+                        'No Member ID'}
+                    </Text>
 
-              <View style={styles.actions}>
-                {/* PRESENT */}
+                    {record && (
+                      <View style={styles.methodRow}>
+                        <Ionicons
+                          name={
+                            record.method ===
+                            'manual'
+                              ? 'hand-left-outline'
+                              : 'bluetooth-outline'
+                          }
+                          size={12}
+                          color={
+                            COLORS.textSecondary
+                          }
+                        />
 
-                <Pressable
-                  style={[
-                    styles.smallButton,
-                    isPresent &&
-                      styles.presentButton,
-                  ]}
-                  onPress={() =>
-                    setManual(
-                      member,
-                      'present'
-                    )
-                  }
-                >
-                  <Ionicons
-                    name="checkmark"
-                    size={16}
-                    color={
-                      isPresent
-                        ? COLORS.white
-                        : COLORS.success
-                    }
-                  />
+                        <Text
+                          style={
+                            styles.methodText
+                          }
+                        >
+                          {record.method ===
+                          'manual'
+                            ? 'Manually marked'
+                            : 'Proximity verified'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
 
-                  <Text
+
+                <View style={styles.actions}>
+                  {/* PRESENT */}
+
+                  <Pressable
                     style={[
-                      styles.smallText,
+                      styles.smallButton,
                       isPresent &&
-                        styles.selectedButtonText,
+                        styles.presentButton,
                     ]}
-                  >
-                    Present
-                  </Text>
-                </Pressable>
-
-                {/* ABSENT */}
-
-                <Pressable
-                  style={[
-                    styles.smallButton,
-                    isAbsent &&
-                      styles.absentButton,
-                  ]}
-                  onPress={() =>
-                    setManual(
-                      member,
-                      'absent'
-                    )
-                  }
-                >
-                  <Ionicons
-                    name="close"
-                    size={16}
-                    color={
-                      isAbsent
-                        ? COLORS.white
-                        : COLORS.danger
+                    disabled={isSaving}
+                    onPress={() =>
+                      setManual(
+                        member,
+                        'present'
+                      )
                     }
-                  />
-
-                  <Text
-                    style={[
-                      styles.smallText,
-                      isAbsent &&
-                        styles.selectedButtonText,
-                    ]}
                   >
-                    Absent
-                  </Text>
-                </Pressable>
+                    {isSaving &&
+                    !isPresent ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={COLORS.success}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="checkmark"
+                        size={16}
+                        color={
+                          isPresent
+                            ? COLORS.white
+                            : COLORS.success
+                        }
+                      />
+                    )}
+
+                    <Text
+                      style={[
+                        styles.smallText,
+                        isPresent &&
+                          styles.selectedButtonText,
+                      ]}
+                    >
+                      Present
+                    </Text>
+                  </Pressable>
+
+
+                  {/* ABSENT */}
+
+                  <Pressable
+                    style={[
+                      styles.smallButton,
+                      isAbsent &&
+                        styles.absentButton,
+                    ]}
+                    disabled={isSaving}
+                    onPress={() =>
+                      setManual(
+                        member,
+                        'absent'
+                      )
+                    }
+                  >
+                    {isSaving &&
+                    !isAbsent ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={COLORS.danger}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="close"
+                        size={16}
+                        color={
+                          isAbsent
+                            ? COLORS.white
+                            : COLORS.danger
+                        }
+                      />
+                    )}
+
+                    <Text
+                      style={[
+                        styles.smallText,
+                        isAbsent &&
+                          styles.selectedButtonText,
+                      ]}
+                    >
+                      Absent
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
+
 
         {/* END MEETING */}
 
         <Pressable
           style={styles.endButton}
           onPress={finish}
+          disabled={refreshingMeeting}
         >
-          <Ionicons
-            name="stop-circle-outline"
-            size={21}
-            color={COLORS.white}
-          />
+          {refreshingMeeting ? (
+            <ActivityIndicator
+              size="small"
+              color={COLORS.white}
+            />
+          ) : (
+            <>
+              <Ionicons
+                name="stop-circle-outline"
+                size={21}
+                color={COLORS.white}
+              />
 
-          <Text style={styles.endText}>
-            End Attendance Session
-          </Text>
+              <Text style={styles.endText}>
+                End Attendance Session
+              </Text>
+            </>
+          )}
         </Pressable>
+
 
         <Text style={styles.footerNote}>
           Automatic proximity attendance is available
@@ -808,16 +1299,16 @@ export default function LiveAttendanceScreen({
           president can manually mark attendance until
           the meeting is ended.
         </Text>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-/*
-|--------------------------------------------------------------------------
-| Styles
-|--------------------------------------------------------------------------
-*/
+
+/* -------------------------------------------------------------------------- */
+/* Styles                                                                     */
+/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -836,16 +1327,13 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Header
-  |--------------------------------------------------------------------------
-  */
+
+  /* Header */
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 22,
+    marginBottom: 18,
   },
 
   backButton: {
@@ -899,11 +1387,49 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Meeting Card
-  |--------------------------------------------------------------------------
-  */
+
+  /* Firebase */
+
+  firebaseStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF3',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+
+  firebaseStatusIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  firebaseStatusTextContainer: {
+    flex: 1,
+  },
+
+  firebaseStatusTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#166534',
+  },
+
+  firebaseStatusSubtitle: {
+    fontSize: 10,
+    color: '#15803D',
+    marginTop: 2,
+  },
+
+
+  /* Meeting */
 
   meetingCard: {
     backgroundColor: COLORS.white,
@@ -963,10 +1489,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  detailLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
   detailLabel: {
     fontSize: 10,
     color: COLORS.textSecondary,
-    marginBottom: 4,
+    marginLeft: 4,
   },
 
   detailValue: {
@@ -975,11 +1507,8 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Timer Card
-  |--------------------------------------------------------------------------
-  */
+
+  /* Timer */
 
   timerCard: {
     backgroundColor: COLORS.navy,
@@ -1084,18 +1613,22 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
+  closeAttendanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 16,
+  },
+
   closeLink: {
     color: COLORS.gold,
-    marginTop: 16,
+    marginLeft: 5,
     fontSize: 12,
     fontWeight: '800',
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Stats
-  |--------------------------------------------------------------------------
-  */
+
+  /* Stats */
 
   statsRow: {
     flexDirection: 'row',
@@ -1113,6 +1646,27 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
 
+  statIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+
+  presentStatIcon: {
+    backgroundColor: '#ECFDF3',
+  },
+
+  memberStatIcon: {
+    backgroundColor: '#EEF3F9',
+  },
+
+  absentStatIcon: {
+    backgroundColor: '#FEF2F2',
+  },
+
   statNumber: {
     fontSize: 22,
     fontWeight: '800',
@@ -1125,11 +1679,8 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Member Section
-  |--------------------------------------------------------------------------
-  */
+
+  /* Section */
 
   sectionHeader: {
     flexDirection: 'row',
@@ -1151,10 +1702,16 @@ const styles = StyleSheet.create({
 
   sessionBadge: {
     marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#EEF3F9',
     paddingHorizontal: 9,
     paddingVertical: 6,
     borderRadius: 9,
+  },
+
+  sessionIcon: {
+    marginRight: 4,
   },
 
   sessionBadgeText: {
@@ -1163,11 +1720,8 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Member Card
-  |--------------------------------------------------------------------------
-  */
+
+  /* Members */
 
   memberCard: {
     backgroundColor: COLORS.white,
@@ -1178,6 +1732,12 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
 
+  memberTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
   memberAvatar: {
     width: 40,
     height: 40,
@@ -1185,7 +1745,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.navy,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 9,
+    marginRight: 11,
   },
 
   memberAvatarText: {
@@ -1195,7 +1755,7 @@ const styles = StyleSheet.create({
   },
 
   memberInfo: {
-    marginBottom: 10,
+    flex: 1,
   },
 
   memberName: {
@@ -1210,10 +1770,16 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
+  methodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+
   methodText: {
     color: COLORS.textSecondary,
     fontSize: 10,
-    marginTop: 4,
+    marginLeft: 4,
   },
 
   actions: {
@@ -1255,11 +1821,56 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | End Button
-  |--------------------------------------------------------------------------
-  */
+
+  /* Loading members */
+
+  membersLoading: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    paddingVertical: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 12,
+  },
+
+  membersLoadingText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 8,
+  },
+
+
+  /* No members */
+
+  noMembersCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 25,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 12,
+  },
+
+  noMembersTitle: {
+    color: COLORS.navy,
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 10,
+  },
+
+  noMembersText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 5,
+  },
+
+
+  /* End */
 
   endButton: {
     height: 54,
@@ -1286,11 +1897,46 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | Empty State
-  |--------------------------------------------------------------------------
-  */
+
+  /* Loading page */
+
+  loadingPage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    backgroundColor: COLORS.background,
+  },
+
+  loadingIcon: {
+    width: 90,
+    height: 90,
+    borderRadius: 30,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+
+  loadingTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.navy,
+  },
+
+  loadingSubtitle: {
+    textAlign: 'center',
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  loadingSpinner: {
+    marginTop: 20,
+  },
+
+
+  /* Empty */
 
   emptyPage: {
     flex: 1,
@@ -1324,11 +1970,18 @@ const styles = StyleSheet.create({
   },
 
   dashboardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.navy,
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 13,
     marginTop: 22,
+  },
+
+  dashboardButtonIcon: {
+    marginRight: 7,
   },
 
   dashboardButtonText: {
