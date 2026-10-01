@@ -17,6 +17,9 @@ import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
 import CreateMeetingScreen from '../screens/admin/CreateMeetingScreen';
 import LiveAttendanceScreen from '../screens/admin/LiveAttendanceScreen';
 
+import BleTestScreen from '../screens/BleTestScreen';
+import ProximityTestScreen from '../screens/ProximityTestScreen';
+
 import { COLORS } from '../theme/colors';
 
 const Stack = createNativeStackNavigator();
@@ -237,6 +240,11 @@ function AdminStack() {
         name="Attendance"
         component={AttendanceScreen}
       />
+
+      <Stack.Screen
+        name="BleTest"
+        component={BleTestScreen}
+      />
     </Stack.Navigator>
   );
 }
@@ -249,14 +257,14 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName="Login"
+        initialRouteName="ProximityTest"
         screenOptions={{
           headerShown: false,
         }}
       >
         <Stack.Screen
-          name="Login"
-          component={LoginScreen}
+          name="ProximityTest"
+          component={ProximityTestScreen}
         />
 
         <Stack.Screen
