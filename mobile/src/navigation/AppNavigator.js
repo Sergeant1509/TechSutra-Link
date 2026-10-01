@@ -241,9 +241,15 @@ function AdminStack() {
         component={AttendanceScreen}
       />
 
+      {/* Temporary BLE development tools */}
       <Stack.Screen
         name="BleTest"
         component={BleTestScreen}
+      />
+
+      <Stack.Screen
+        name="ProximityTest"
+        component={ProximityTestScreen}
       />
     </Stack.Navigator>
   );
@@ -257,14 +263,14 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName="ProximityTest"
+        initialRouteName="Login"
         screenOptions={{
           headerShown: false,
         }}
       >
         <Stack.Screen
-          name="ProximityTest"
-          component={ProximityTestScreen}
+          name="Login"
+          component={LoginScreen}
         />
 
         <Stack.Screen
@@ -280,6 +286,17 @@ export default function AppNavigator() {
         <Stack.Screen
           name="Admin"
           component={AdminStack}
+        />
+
+        {/* Temporary BLE development tools */}
+        <Stack.Screen
+          name="BleTest"
+          component={BleTestScreen}
+        />
+
+        <Stack.Screen
+          name="ProximityTest"
+          component={ProximityTestScreen}
         />
       </Stack.Navigator>
     </NavigationContainer>

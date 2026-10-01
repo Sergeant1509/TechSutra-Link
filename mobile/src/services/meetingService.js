@@ -17,6 +17,34 @@ const MEETINGS_COLLECTION = 'meetings';
 
 /*
 |--------------------------------------------------------------------------
+| BLE SESSION HELPERS
+|--------------------------------------------------------------------------
+|
+| A new temporary session ID is generated whenever a meeting becomes active.
+|
+| This is currently generated on the client for development.
+| Later, session creation/validation should be moved to trusted
+| backend/Cloud Functions logic before production.
+|
+|--------------------------------------------------------------------------
+*/
+
+const generateSessionId = () => {
+  const timestamp = Date.now().toString(36);
+
+  const randomPart = Array.from(
+    { length: 20 },
+    () =>
+      Math.floor(
+        Math.random() * 36
+      ).toString(36)
+  ).join('');
+
+  return `ts-${timestamp}-${randomPart}`;
+};
+
+/*
+|--------------------------------------------------------------------------
 | CREATE MEETING
 |--------------------------------------------------------------------------
 */
@@ -33,16 +61,39 @@ export const createMeeting = async ({
 }) => {
   try {
     if (!title?.trim()) {
-      throw new Error('Meeting title is required.');
+      throw new Error(
+        'Meeting title is required.'
+      );
     }
 
     if (!location?.trim()) {
-      throw new Error('Meeting location is required.');
+      throw new Error(
+        'Meeting location is required.'
+      );
     }
 
     if (!createdBy) {
-      throw new Error('Creator information is missing.');
+      throw new Error(
+        'Creator information is missing.'
+      );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session handling
+    |--------------------------------------------------------------------------
+    |
+    | Scheduled meetings do not receive an active BLE session.
+    |
+    | Start Now meetings immediately receive:
+    |
+    | sessionId
+    | sessionStatus: active
+    |
+    */
+
+    const isActive =
+      status === 'active';
 
     const meetingData = {
       title: title.trim(),
@@ -55,26 +106,19 @@ export const createMeeting = async ({
       createdBy,
       createdAt: serverTimestamp(),
 
-      /*
-      |--------------------------------------------------------------------------
-      | IMPORTANT
-      |--------------------------------------------------------------------------
-      | Start immediately only when the meeting is created as active.
-      |
-      | Scheduled meeting:
-      | startedAt = null
-      |
-      | Start Now:
-      | startedAt = current Firestore server timestamp
-      |--------------------------------------------------------------------------
-      */
-
-      startedAt:
-        status === 'active'
-          ? serverTimestamp()
-          : null,
+      startedAt: isActive
+        ? serverTimestamp()
+        : null,
 
       endedAt: null,
+
+      sessionId: isActive
+        ? generateSessionId()
+        : null,
+
+      sessionStatus: isActive
+        ? 'active'
+        : null,
     };
 
     const meetingsRef = collection(
@@ -348,6 +392,10 @@ export const getCompletedMeetings =
 |
 | Used when a previously scheduled meeting is
 | started from the Meetings / Live Attendance flow.
+|
+| A fresh BLE session is generated every time
+| the meeting is started.
+|
 |--------------------------------------------------------------------------
 */
 
@@ -367,13 +415,29 @@ export const startMeeting = async (
       meetingId
     );
 
-    await updateDoc(meetingRef, {
-      status: 'active',
-      startedAt: serverTimestamp(),
-      endedAt: null,
-    });
+    const sessionId =
+      generateSessionId();
 
-    return true;
+    await updateDoc(
+      meetingRef,
+      {
+        status: 'active',
+
+        startedAt:
+          serverTimestamp(),
+
+        endedAt: null,
+
+        sessionId,
+
+        sessionStatus: 'active',
+      }
+    );
+
+    return {
+      success: true,
+      sessionId,
+    };
   } catch (error) {
     console.log(
       'startMeeting error:',
@@ -387,6 +451,10 @@ export const startMeeting = async (
 /*
 |--------------------------------------------------------------------------
 | END MEETING
+|--------------------------------------------------------------------------
+|
+| Ending the meeting also invalidates its BLE session.
+|
 |--------------------------------------------------------------------------
 */
 
@@ -406,10 +474,17 @@ export const endMeeting = async (
       meetingId
     );
 
-    await updateDoc(meetingRef, {
-      status: 'completed',
-      endedAt: serverTimestamp(),
-    });
+    await updateDoc(
+      meetingRef,
+      {
+        status: 'completed',
+
+        endedAt:
+          serverTimestamp(),
+
+        sessionStatus: 'ended',
+      }
+    );
 
     return true;
   } catch (error) {
@@ -456,3 +531,78 @@ export const deleteMeeting = async (
     throw error;
   }
 };
+
+/*
+|--------------------------------------------------------------------------
+| GET ACTIVE BLE SESSION
+|--------------------------------------------------------------------------
+|
+| Returns the session information for an active meeting.
+|
+|--------------------------------------------------------------------------
+*/
+
+export const getActiveMeetingSession =
+  async (meetingId) => {
+    try {
+      if (!meetingId) {
+        throw new Error(
+          'Meeting ID is required.'
+        );
+      }
+
+      const meeting =
+        await getMeetingById(
+          meetingId
+        );
+
+      if (!meeting) {
+        return null;
+      }
+
+      if (
+        meeting.status !==
+        'active'
+      ) {
+        return null;
+      }
+
+      if (
+        !meeting.sessionId ||
+        meeting.sessionStatus !==
+          'active'
+      ) {
+        return null;
+      }
+
+      return {
+        meetingId:
+          meeting.id,
+
+        sessionId:
+          meeting.sessionId,
+
+        sessionStatus:
+          meeting.sessionStatus,
+
+        title:
+          meeting.title,
+
+        startedAt:
+          meeting.startedAt,
+
+        duration:
+          meeting.duration,
+
+        createdBy:
+          meeting.createdBy,
+      };
+    } catch (error) {
+      console.log(
+        'getActiveMeetingSession error:',
+        error
+      );
+
+      throw error;
+    }
+  };

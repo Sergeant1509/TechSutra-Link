@@ -30,6 +30,7 @@ import {
   getScheduledMeetings,
   getCompletedMeetings,
   deleteMeeting,
+  startMeeting,
 } from '../services/meetingService';
 
 export default function MeetingsScreen({ navigation }) {
@@ -44,10 +45,11 @@ export default function MeetingsScreen({ navigation }) {
   const [error, setError] = useState('');
 
   const [deletingMeetingId, setDeletingMeetingId] = useState(null);
+  const [startingMeetingId, setStartingMeetingId] = useState(null);
 
-  /* =========================================
+  /* =========================================================
      LOAD MEETINGS + USER ROLE
-  ========================================= */
+  ========================================================= */
 
   const loadMeetings = async (isRefresh = false) => {
     try {
@@ -132,9 +134,10 @@ export default function MeetingsScreen({ navigation }) {
         sortByStartTime
       );
 
-      const sortedScheduled = [...scheduled].sort(
-        sortByStartTime
-      );
+      const sortedScheduled =
+        [...scheduled].sort(
+          sortByStartTime
+        );
 
       const sortedCompleted =
         [...completed].sort((a, b) => {
@@ -174,9 +177,9 @@ export default function MeetingsScreen({ navigation }) {
     }
   };
 
-  /* =========================================
+  /* =========================================================
      REFRESH WHEN SCREEN OPENS
-  ========================================= */
+  ========================================================= */
 
   useFocusEffect(
     useCallback(() => {
@@ -184,9 +187,9 @@ export default function MeetingsScreen({ navigation }) {
     }, [])
   );
 
-  /* =========================================
+  /* =========================================================
      FORMAT DATE
-  ========================================= */
+  ========================================================= */
 
   const formatDate = (meeting) => {
     if (meeting?.startAt) {
@@ -212,9 +215,9 @@ export default function MeetingsScreen({ navigation }) {
     );
   };
 
-  /* =========================================
+  /* =========================================================
      FORMAT TIME
-  ========================================= */
+  ========================================================= */
 
   const formatTime = (meeting) => {
     if (meeting?.startAt) {
@@ -240,9 +243,9 @@ export default function MeetingsScreen({ navigation }) {
     );
   };
 
-  /* =========================================
+  /* =========================================================
      DELETE SCHEDULED MEETING
-  ========================================= */
+  ========================================================= */
 
   const handleDeleteMeeting = (meeting) => {
     Alert.alert(
@@ -272,7 +275,8 @@ export default function MeetingsScreen({ navigation }) {
                 (currentMeetings) =>
                   currentMeetings.filter(
                     (item) =>
-                      item.id !== meeting.id
+                      item.id !==
+                      meeting.id
                   )
               );
 
@@ -301,16 +305,95 @@ export default function MeetingsScreen({ navigation }) {
     );
   };
 
-  /* =========================================
+  /* =========================================================
+     START SCHEDULED MEETING
+  ========================================================= */
+
+  const handleStartMeeting = (meeting) => {
+    Alert.alert(
+      'Start Meeting?',
+      `Start "${meeting.title}" now?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+
+        {
+          text: 'Start',
+
+          onPress: async () => {
+            try {
+              setStartingMeetingId(
+                meeting.id
+              );
+
+              const result =
+                await startMeeting(
+                  meeting.id
+                );
+
+              /*
+               * Reload the meetings so the
+               * scheduled meeting moves into
+               * Active Meetings.
+               */
+              await loadMeetings();
+
+              /*
+               * Open Live Attendance.
+               *
+               * The sessionId was generated
+               * by startMeeting().
+               */
+              navigation.navigate(
+                'LiveAttendance',
+                {
+                  meetingId:
+                    meeting.id,
+
+                  sessionId:
+                    result?.sessionId ||
+                    null,
+                }
+              );
+
+            } catch (error) {
+              console.log(
+                'Start meeting error:',
+                error
+              );
+
+              Alert.alert(
+                'Start Failed',
+                error?.message ||
+                  'Unable to start the meeting. Please try again.'
+              );
+
+            } finally {
+              setStartingMeetingId(
+                null
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  /* =========================================================
      ACTIVE MEETING
-  ========================================= */
+  ========================================================= */
 
   const renderActiveMeeting = () => {
     if (activeMeetings.length === 0) {
       return (
-        <View style={styles.emptyActiveCard}>
-
-          <View style={styles.emptyActiveIcon}>
+        <View
+          style={styles.emptyActiveCard}
+        >
+          <View
+            style={styles.emptyActiveIcon}
+          >
             <Ionicons
               name="time-outline"
               size={30}
@@ -318,40 +401,49 @@ export default function MeetingsScreen({ navigation }) {
             />
           </View>
 
-          <Text style={styles.emptyActiveTitle}>
+          <Text
+            style={
+              styles.emptyActiveTitle
+            }
+          >
             No Active Meeting
           </Text>
 
-          <Text style={styles.emptyActiveText}>
+          <Text
+            style={
+              styles.emptyActiveText
+            }
+          >
             There is currently no active
             TechSutra meeting.
           </Text>
-
         </View>
       );
     }
 
-    const meeting = activeMeetings[0];
+    const meeting =
+      activeMeetings[0];
 
     return (
       <View style={styles.activeCard}>
-
         <View style={styles.activeHeader}>
-
           <View style={styles.activeBadge}>
-
             <View style={styles.activeDot} />
 
-            <Text style={styles.activeBadgeText}>
+            <Text
+              style={
+                styles.activeBadgeText
+              }
+            >
               LIVE
             </Text>
-
           </View>
 
           <Text style={styles.todayText}>
-            {formatDate(meeting).toUpperCase()}
+            {formatDate(
+              meeting
+            ).toUpperCase()}
           </Text>
-
         </View>
 
         <Text style={styles.meetingTitle}>
@@ -363,10 +455,12 @@ export default function MeetingsScreen({ navigation }) {
         </Text>
 
         <View style={styles.detailsRow}>
-
           <View style={styles.detail}>
-
-            <View style={styles.detailIconContainer}>
+            <View
+              style={
+                styles.detailIconContainer
+              }
+            >
               <Ionicons
                 name="time-outline"
                 size={18}
@@ -375,20 +469,30 @@ export default function MeetingsScreen({ navigation }) {
             </View>
 
             <View>
-              <Text style={styles.detailLabel}>
+              <Text
+                style={
+                  styles.detailLabel
+                }
+              >
                 TIME
               </Text>
 
-              <Text style={styles.detailValue}>
+              <Text
+                style={
+                  styles.detailValue
+                }
+              >
                 {formatTime(meeting)}
               </Text>
             </View>
-
           </View>
 
           <View style={styles.detail}>
-
-            <View style={styles.detailIconContainer}>
+            <View
+              style={
+                styles.detailIconContainer
+              }
+            >
               <Ionicons
                 name="location-outline"
                 size={18}
@@ -396,40 +500,48 @@ export default function MeetingsScreen({ navigation }) {
               />
             </View>
 
-            <View style={styles.locationContainer}>
-
-              <Text style={styles.detailLabel}>
+            <View
+              style={
+                styles.locationContainer
+              }
+            >
+              <Text
+                style={
+                  styles.detailLabel
+                }
+              >
                 LOCATION
               </Text>
 
               <Text
-                style={styles.detailValue}
+                style={
+                  styles.detailValue
+                }
                 numberOfLines={1}
               >
                 {meeting.location ||
                   'Location not available'}
               </Text>
-
             </View>
-
           </View>
-
         </View>
 
         <Pressable
-          style={styles.attendanceButton}
+          style={
+            styles.attendanceButton
+          }
           onPress={() =>
             navigation.navigate(
               isPresident
                 ? 'LiveAttendance'
                 : 'Attendance',
               {
-                meetingId: meeting.id,
+                meetingId:
+                  meeting.id,
               }
             )
           }
         >
-
           <Ionicons
             name={
               isPresident
@@ -440,7 +552,11 @@ export default function MeetingsScreen({ navigation }) {
             color={COLORS.navy}
           />
 
-          <Text style={styles.attendanceText}>
+          <Text
+            style={
+              styles.attendanceText
+            }
+          >
             {isPresident
               ? 'Manage Attendance'
               : 'Join Attendance'}
@@ -452,142 +568,168 @@ export default function MeetingsScreen({ navigation }) {
             color={COLORS.navy}
             style={styles.arrow}
           />
-
         </Pressable>
-
       </View>
     );
   };
 
-  /* =========================================
+  /* =========================================================
      UI
-  ========================================= */
+  ========================================================= */
 
   return (
     <View style={styles.container}>
-
       <StatusBar
         barStyle="dark-content"
-        backgroundColor={COLORS.background}
+        backgroundColor={
+          COLORS.background
+        }
       />
 
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          styles.content
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() =>
               loadMeetings(true)
             }
-            tintColor={COLORS.goldDark}
+            tintColor={
+              COLORS.goldDark
+            }
           />
         }
       >
-
         {/* HEADER */}
 
         <View style={styles.header}>
-
           <View>
-
-            <Text style={styles.heading}>
+            <Text
+              style={styles.heading}
+            >
               Meetings
             </Text>
 
-            <Text style={styles.subtitle}>
+            <Text
+              style={styles.subtitle}
+            >
               {isPresident
                 ? 'Manage TechSutra meetings'
                 : 'Stay connected with TechSutra'}
             </Text>
-
           </View>
 
-          <View style={styles.calendarIcon}>
-
+          <View
+            style={styles.calendarIcon}
+          >
             <Ionicons
               name="calendar-outline"
               size={24}
               color={COLORS.navy}
             />
-
           </View>
-
         </View>
 
         {/* LOADING */}
 
         {loading ? (
-
-          <View style={styles.loadingContainer}>
-
+          <View
+            style={
+              styles.loadingContainer
+            }
+          >
             <ActivityIndicator
               size="large"
               color={COLORS.goldDark}
             />
 
-            <Text style={styles.loadingText}>
+            <Text
+              style={
+                styles.loadingText
+              }
+            >
               Loading meetings...
             </Text>
-
           </View>
-
         ) : (
-
           <>
-
             {/* ERROR */}
 
             {error ? (
-
-              <View style={styles.errorCard}>
-
-                <View style={styles.errorIcon}>
-
+              <View
+                style={
+                  styles.errorCard
+                }
+              >
+                <View
+                  style={
+                    styles.errorIcon
+                  }
+                >
                   <Ionicons
                     name="alert-circle-outline"
                     size={25}
-                    color={COLORS.danger}
+                    color={
+                      COLORS.danger
+                    }
                   />
-
                 </View>
 
-                <Text style={styles.errorTitle}>
+                <Text
+                  style={
+                    styles.errorTitle
+                  }
+                >
                   Unable to load meetings
                 </Text>
 
-                <Text style={styles.errorText}>
+                <Text
+                  style={
+                    styles.errorText
+                  }
+                >
                   {error}
                 </Text>
 
                 <Pressable
-                  style={styles.retryButton}
+                  style={
+                    styles.retryButton
+                  }
                   onPress={() =>
                     loadMeetings()
                   }
                 >
-
                   <Ionicons
                     name="refresh-outline"
                     size={17}
-                    color={COLORS.white}
+                    color={
+                      COLORS.white
+                    }
                   />
 
-                  <Text style={styles.retryText}>
+                  <Text
+                    style={
+                      styles.retryText
+                    }
+                  >
                     Retry
                   </Text>
-
                 </Pressable>
-
               </View>
-
             ) : (
-
               <>
-
                 {/* ACTIVE */}
 
-                <Text style={styles.sectionTitle}>
+                <Text
+                  style={
+                    styles.sectionTitle
+                  }
+                >
                   Active Meeting
                 </Text>
 
@@ -595,48 +737,72 @@ export default function MeetingsScreen({ navigation }) {
 
                 {/* UPCOMING */}
 
-                <Text style={styles.sectionTitle}>
+                <Text
+                  style={
+                    styles.sectionTitle
+                  }
+                >
                   Upcoming Meetings
                 </Text>
 
-                {upcomingMeetings.length === 0 ? (
-
-                  <View style={styles.emptyCard}>
-
-                    <View style={styles.emptyIcon}>
-
+                {upcomingMeetings.length ===
+                0 ? (
+                  <View
+                    style={
+                      styles.emptyCard
+                    }
+                  >
+                    <View
+                      style={
+                        styles.emptyIcon
+                      }
+                    >
                       <Ionicons
                         name="calendar-outline"
                         size={25}
-                        color={COLORS.textSecondary}
+                        color={
+                          COLORS.textSecondary
+                        }
                       />
-
                     </View>
 
-                    <Text style={styles.emptyTitle}>
+                    <Text
+                      style={
+                        styles.emptyTitle
+                      }
+                    >
                       No Upcoming Meetings
                     </Text>
 
-                    <Text style={styles.emptyText}>
+                    <Text
+                      style={
+                        styles.emptyText
+                      }
+                    >
                       Scheduled meetings will
                       appear here.
                     </Text>
-
                   </View>
-
                 ) : (
-
                   upcomingMeetings.map(
                     (meeting) => (
-
                       <MeetingCard
                         key={meeting.id}
                         meeting={meeting}
-                        isPresident={isPresident}
+                        isPresident={
+                          isPresident
+                        }
                         deletingMeetingId={
                           deletingMeetingId
                         }
-
+                        startingMeetingId={
+                          startingMeetingId
+                        }
+                        onStart={() =>
+                          handleStartMeeting(
+                            meeting
+                          )
+                        }
                         onEdit={() =>
                           navigation.navigate(
                             'CreateMeeting',
@@ -646,75 +812,79 @@ export default function MeetingsScreen({ navigation }) {
                             }
                           )
                         }
-
                         onDelete={() =>
                           handleDeleteMeeting(
                             meeting
                           )
                         }
                       />
-
                     )
                   )
-
                 )}
 
                 {/* PREVIOUS */}
 
-                <Text style={styles.sectionTitle}>
+                <Text
+                  style={
+                    styles.sectionTitle
+                  }
+                >
                   Previous Meetings
                 </Text>
 
-                {previousMeetings.length === 0 ? (
-
-                  <View style={styles.emptyCard}>
-
-                    <View style={styles.emptyIcon}>
-
+                {previousMeetings.length ===
+                0 ? (
+                  <View
+                    style={
+                      styles.emptyCard
+                    }
+                  >
+                    <View
+                      style={
+                        styles.emptyIcon
+                      }
+                    >
                       <Ionicons
                         name="time-outline"
                         size={25}
-                        color={COLORS.textSecondary}
+                        color={
+                          COLORS.textSecondary
+                        }
                       />
-
                     </View>
 
-                    <Text style={styles.emptyTitle}>
+                    <Text
+                      style={
+                        styles.emptyTitle
+                      }
+                    >
                       No Previous Meetings
                     </Text>
 
-                    <Text style={styles.emptyText}>
+                    <Text
+                      style={
+                        styles.emptyText
+                      }
+                    >
                       Completed meetings will
                       appear here.
                     </Text>
-
                   </View>
-
                 ) : (
-
                   previousMeetings.map(
                     (meeting) => (
-
                       <PreviousMeeting
                         key={meeting.id}
                         meeting={meeting}
                       />
-
                     )
                   )
-
                 )}
-
               </>
-
             )}
-
           </>
-
         )}
-
       </ScrollView>
-
     </View>
   );
 }
@@ -727,152 +897,238 @@ function MeetingCard({
   meeting,
   isPresident,
   deletingMeetingId,
+  startingMeetingId,
+  onStart,
   onEdit,
   onDelete,
 }) {
   const {
     day,
     month,
-  } = getMeetingDateParts(meeting);
+  } = getMeetingDateParts(
+    meeting
+  );
 
   return (
     <View style={styles.meetingCard}>
-
-      <View style={styles.meetingCardMain}>
-
+      <View
+        style={
+          styles.meetingCardMain
+        }
+      >
         <View style={styles.dateBox}>
-
-          <Text style={styles.dateDay}>
+          <Text
+            style={styles.dateDay}
+          >
             {day}
           </Text>
 
-          <Text style={styles.dateMonth}>
+          <Text
+            style={styles.dateMonth}
+          >
             {month}
           </Text>
-
         </View>
 
-        <View style={styles.meetingCardInfo}>
-
+        <View
+          style={
+            styles.meetingCardInfo
+          }
+        >
           <Text
-            style={styles.meetingCardTitle}
+            style={
+              styles.meetingCardTitle
+            }
             numberOfLines={1}
           >
             {meeting.title}
           </Text>
 
-          <View style={styles.cardDetailRow}>
-
+          <View
+            style={
+              styles.cardDetailRow
+            }
+          >
             <Ionicons
               name="time-outline"
               size={13}
-              color={COLORS.textSecondary}
-            />
-
-            <Text style={styles.meetingCardDetails}>
-              {getMeetingTime(meeting)}
-            </Text>
-
-          </View>
-
-          <View style={styles.cardDetailRow}>
-
-            <Ionicons
-              name="location-outline"
-              size={13}
-              color={COLORS.textSecondary}
+              color={
+                COLORS.textSecondary
+              }
             />
 
             <Text
-              style={styles.meetingCardDetails}
+              style={
+                styles.meetingCardDetails
+              }
+            >
+              {getMeetingTime(
+                meeting
+              )}
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.cardDetailRow
+            }
+          >
+            <Ionicons
+              name="location-outline"
+              size={13}
+              color={
+                COLORS.textSecondary
+              }
+            />
+
+            <Text
+              style={
+                styles.meetingCardDetails
+              }
               numberOfLines={1}
             >
               {meeting.location ||
                 'Location not available'}
             </Text>
-
           </View>
-
         </View>
-
       </View>
 
       {/* PRESIDENT CONTROLS */}
 
       {isPresident ? (
-
-        <View style={styles.meetingActions}>
+        <View
+          style={
+            styles.meetingActions
+          }
+        >
+          {/* START */}
 
           <Pressable
-            style={styles.editButton}
+            style={
+              styles.startMeetingButton
+            }
+            disabled={
+              startingMeetingId ===
+              meeting.id
+            }
+            onPress={onStart}
+          >
+            {startingMeetingId ===
+            meeting.id ? (
+              <ActivityIndicator
+                size="small"
+                color={
+                  COLORS.white
+                }
+              />
+            ) : (
+              <Ionicons
+                name="play"
+                size={16}
+                color={
+                  COLORS.white
+                }
+              />
+            )}
+
+            <Text
+              style={
+                styles.startMeetingButtonText
+              }
+            >
+              {startingMeetingId ===
+              meeting.id
+                ? 'Starting...'
+                : 'Start'}
+            </Text>
+          </Pressable>
+
+          {/* EDIT */}
+
+          <Pressable
+            style={
+              styles.editButton
+            }
             onPress={onEdit}
           >
-
             <Ionicons
               name="create-outline"
               size={17}
               color={COLORS.navy}
             />
 
-            <Text style={styles.editButtonText}>
+            <Text
+              style={
+                styles.editButtonText
+              }
+            >
               Edit
             </Text>
-
           </Pressable>
 
+          {/* DELETE */}
+
           <Pressable
-            style={styles.deleteButton}
+            style={
+              styles.deleteButton
+            }
             disabled={
-              deletingMeetingId === meeting.id
+              deletingMeetingId ===
+              meeting.id
             }
             onPress={onDelete}
           >
-
-            {deletingMeetingId === meeting.id ? (
-
+            {deletingMeetingId ===
+            meeting.id ? (
               <ActivityIndicator
                 size="small"
-                color={COLORS.danger}
+                color={
+                  COLORS.danger
+                }
               />
-
             ) : (
-
               <>
                 <Ionicons
                   name="trash-outline"
                   size={17}
-                  color={COLORS.danger}
+                  color={
+                    COLORS.danger
+                  }
                 />
 
-                <Text style={styles.deleteButtonText}>
+                <Text
+                  style={
+                    styles.deleteButtonText
+                  }
+                >
                   Delete
                 </Text>
               </>
-
             )}
-
           </Pressable>
-
         </View>
-
       ) : (
-
-        <View style={styles.scheduledInfoRow}>
-
+        <View
+          style={
+            styles.scheduledInfoRow
+          }
+        >
           <Ionicons
             name="time-outline"
             size={14}
             color={COLORS.textLight}
           />
 
-          <Text style={styles.scheduledInfoText}>
+          <Text
+            style={
+              styles.scheduledInfoText
+            }
+          >
             Scheduled meeting
           </Text>
-
         </View>
-
       )}
-
     </View>
   );
 }
@@ -881,59 +1137,81 @@ function MeetingCard({
    PREVIOUS MEETING
 ========================================================= */
 
-function PreviousMeeting({ meeting }) {
+function PreviousMeeting({
+  meeting,
+}) {
   const status =
     meeting?.attendanceStatus ||
     'Completed';
 
   const isAbsent =
-    status.toLowerCase() === 'absent';
+    status.toLowerCase() ===
+    'absent';
 
   return (
-    <View style={styles.previousCard}>
-
-      <View style={styles.previousIcon}>
-
+    <View
+      style={
+        styles.previousCard
+      }
+    >
+      <View
+        style={
+          styles.previousIcon
+        }
+      >
         <Ionicons
           name="clipboard-outline"
           size={21}
           color={COLORS.navy}
         />
-
       </View>
 
-      <View style={styles.previousInfo}>
-
+      <View
+        style={
+          styles.previousInfo
+        }
+      >
         <Text
-          style={styles.previousTitle}
+          style={
+            styles.previousTitle
+          }
           numberOfLines={1}
         >
           {meeting.title}
         </Text>
 
-        <View style={styles.previousDateRow}>
-
+        <View
+          style={
+            styles.previousDateRow
+          }
+        >
           <Ionicons
             name="calendar-outline"
             size={12}
-            color={COLORS.textSecondary}
+            color={
+              COLORS.textSecondary
+            }
           />
 
-          <Text style={styles.previousDate}>
-            {getMeetingDate(meeting)}
+          <Text
+            style={
+              styles.previousDate
+            }
+          >
+            {getMeetingDate(
+              meeting
+            )}
           </Text>
-
         </View>
-
       </View>
 
       <View
         style={[
           styles.statusBadge,
-          isAbsent && styles.absentBadge,
+          isAbsent &&
+            styles.absentBadge,
         ]}
       >
-
         <Ionicons
           name={
             isAbsent
@@ -951,14 +1229,13 @@ function PreviousMeeting({ meeting }) {
         <Text
           style={[
             styles.statusText,
-            isAbsent && styles.absentText,
+            isAbsent &&
+              styles.absentText,
           ]}
         >
           {status}
         </Text>
-
       </View>
-
     </View>
   );
 }
@@ -973,7 +1250,11 @@ function getMeetingDate(meeting) {
       meeting.startAt
     );
 
-    if (!Number.isNaN(date.getTime())) {
+    if (
+      !Number.isNaN(
+        date.getTime()
+      )
+    ) {
       return date.toLocaleDateString(
         'en-IN',
         {
@@ -997,7 +1278,11 @@ function getMeetingTime(meeting) {
       meeting.startAt
     );
 
-    if (!Number.isNaN(date.getTime())) {
+    if (
+      !Number.isNaN(
+        date.getTime()
+      )
+    ) {
       return date.toLocaleTimeString(
         'en-IN',
         {
@@ -1015,14 +1300,19 @@ function getMeetingTime(meeting) {
   );
 }
 
-function getMeetingDateParts(meeting) {
-  const date = getMeetingDate(meeting);
+function getMeetingDateParts(
+  meeting
+) {
+  const date =
+    getMeetingDate(meeting);
 
-  const parts = date.split(' ');
+  const parts =
+    date.split(' ');
 
   return {
     day: parts[0] || '--',
-    month: parts[1] || '---',
+    month:
+      parts[1] || '---',
   };
 }
 
@@ -1031,10 +1321,10 @@ function getMeetingDateParts(meeting) {
 ========================================================= */
 
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
   },
 
   content: {
@@ -1046,7 +1336,8 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
   },
 
   heading: {
@@ -1056,7 +1347,8 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 13,
     marginTop: 5,
   },
@@ -1065,9 +1357,11 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 14,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     elevation: 2,
     shadowColor: '#000',
     shadowOpacity: 0.04,
@@ -1091,13 +1385,15 @@ const styles = StyleSheet.create({
   ========================================= */
 
   activeCard: {
-    backgroundColor: COLORS.navy,
+    backgroundColor:
+      COLORS.navy,
     borderRadius: 21,
     padding: 22,
   },
 
   emptyActiveCard: {
-    backgroundColor: COLORS.navy,
+    backgroundColor:
+      COLORS.navy,
     borderRadius: 21,
     padding: 24,
     alignItems: 'center',
@@ -1110,7 +1406,8 @@ const styles = StyleSheet.create({
     backgroundColor:
       'rgba(255,198,41,0.12)',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
   },
 
   emptyActiveTitle: {
@@ -1130,7 +1427,8 @@ const styles = StyleSheet.create({
   activeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
   },
 
   activeBadge: {
@@ -1147,7 +1445,8 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: COLORS.gold,
+    backgroundColor:
+      COLORS.gold,
     marginRight: 6,
   },
 
@@ -1197,7 +1496,8 @@ const styles = StyleSheet.create({
     backgroundColor:
       'rgba(255,198,41,0.12)',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     marginRight: 8,
   },
 
@@ -1221,11 +1521,13 @@ const styles = StyleSheet.create({
 
   attendanceButton: {
     height: 49,
-    backgroundColor: COLORS.gold,
+    backgroundColor:
+      COLORS.gold,
     borderRadius: 11,
     marginTop: 22,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     flexDirection: 'row',
   },
 
@@ -1245,7 +1547,8 @@ const styles = StyleSheet.create({
   ========================================= */
 
   meetingCard: {
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderRadius: 16,
     padding: 15,
     marginBottom: 11,
@@ -1260,9 +1563,11 @@ const styles = StyleSheet.create({
     width: 52,
     height: 57,
     borderRadius: 13,
-    backgroundColor: '#FFF7D6',
+    backgroundColor:
+      '#FFF7D6',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
   },
 
   dateDay: {
@@ -1275,7 +1580,8 @@ const styles = StyleSheet.create({
     color: COLORS.goldDark,
     fontSize: 9,
     fontWeight: '800',
-    textTransform: 'uppercase',
+    textTransform:
+      'uppercase',
     marginTop: 2,
   },
 
@@ -1297,7 +1603,8 @@ const styles = StyleSheet.create({
   },
 
   meetingCardDetails: {
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 10,
     marginLeft: 5,
     flexShrink: 1,
@@ -1309,22 +1616,45 @@ const styles = StyleSheet.create({
 
   meetingActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     marginTop: 13,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderTopColor:
+      COLORS.border,
+  },
+
+  startMeetingButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor:
+      COLORS.navy,
+    alignItems: 'center',
+    justifyContent:
+      'center',
+    flexDirection: 'row',
+  },
+
+  startMeetingButtonText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '800',
+    marginLeft: 6,
   },
 
   editButton: {
     flex: 1,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    backgroundColor:
+      '#F1F5F9',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor:
+      COLORS.border,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     flexDirection: 'row',
   },
 
@@ -1339,11 +1669,14 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#FEF2F2',
+    backgroundColor:
+      '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor:
+      '#FECACA',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     flexDirection: 'row',
   },
 
@@ -1360,7 +1693,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderTopColor:
+      COLORS.border,
   },
 
   scheduledInfoText: {
@@ -1374,7 +1708,8 @@ const styles = StyleSheet.create({
   ========================================= */
 
   previousCard: {
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderRadius: 15,
     padding: 14,
     marginBottom: 10,
@@ -1386,9 +1721,11 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    backgroundColor:
+      '#F1F5F9',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
   },
 
   previousInfo: {
@@ -1410,13 +1747,15 @@ const styles = StyleSheet.create({
   },
 
   previousDate: {
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 10,
     marginLeft: 4,
   },
 
   statusBadge: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor:
+      '#DCFCE7',
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 20,
@@ -1432,7 +1771,8 @@ const styles = StyleSheet.create({
   },
 
   absentBadge: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor:
+      '#FEE2E2',
   },
 
   absentText: {
@@ -1446,11 +1786,13 @@ const styles = StyleSheet.create({
   loadingContainer: {
     paddingVertical: 80,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
   },
 
   loadingText: {
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 13,
     marginTop: 12,
   },
@@ -1460,7 +1802,8 @@ const styles = StyleSheet.create({
   ========================================= */
 
   emptyCard: {
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderRadius: 16,
     padding: 22,
     alignItems: 'center',
@@ -1470,9 +1813,11 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#F1F5F9',
+    backgroundColor:
+      '#F1F5F9',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     marginBottom: 8,
   },
 
@@ -1483,7 +1828,8 @@ const styles = StyleSheet.create({
   },
 
   emptyText: {
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 11,
     marginTop: 5,
     textAlign: 'center',
@@ -1494,7 +1840,8 @@ const styles = StyleSheet.create({
   ========================================= */
 
   errorCard: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor:
+      '#FEF2F2',
     borderRadius: 16,
     padding: 20,
     marginTop: 28,
@@ -1504,9 +1851,11 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#FEE2E2',
+    backgroundColor:
+      '#FEE2E2',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     marginBottom: 10,
   },
 
@@ -1517,14 +1866,16 @@ const styles = StyleSheet.create({
   },
 
   errorText: {
-    color: COLORS.textSecondary,
+    color:
+      COLORS.textSecondary,
     fontSize: 12,
     marginTop: 6,
   },
 
   retryButton: {
     alignSelf: 'flex-start',
-    backgroundColor: COLORS.navy,
+    backgroundColor:
+      COLORS.navy,
     borderRadius: 9,
     paddingHorizontal: 16,
     paddingVertical: 9,
